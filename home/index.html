@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b18" />
 
     <title>CantaAI - Descubra músicas</title>
 
@@ -15,7 +16,9 @@
     <script src="./home.js" defer></script>
   </head>
   <body>
-    <main class="home-page">
+    <a class="skip-link" href="#conteudo-principal">Pular para o conteúdo</a>
+
+    <main id="conteudo-principal" class="home-page">
       <section class="hero" aria-labelledby="hero-title">
         <p class="hero__tag">Busca inteligente de músicas</p>
 
@@ -26,13 +29,22 @@
           letra ou cantando do seu jeito.
         </p>
 
-        <div class="hero__actions">
-          <a href="../search/" class="button button--primary">
-            🔍 Buscar por texto
+        <div
+          class="hero__actions"
+          aria-label="Escolha como quer buscar a música"
+        >
+          <a href="../search/" class="button button--primary" data-loading-link>
+            <span aria-hidden="true" class="button__icon">🔍</span>
+            <span>Buscar por texto</span>
           </a>
 
-          <a href="../record/" class="button button--secondary">
-            🎤 Cantar ou cantarolar
+          <a
+            href="../record/"
+            class="button button--secondary"
+            data-loading-link
+          >
+            <span aria-hidden="true" class="button__icon">🎤</span>
+            <span>Cantar ou cantarolar</span>
           </a>
         </div>
       </section>
@@ -40,29 +52,32 @@
       <section class="examples" aria-labelledby="examples-title">
         <h2 id="examples-title" class="section-title">Exemplos de busca</h2>
 
-        <div class="examples__grid">
-          <article class="example-card">
+        <ul
+          class="examples__grid"
+          aria-label="Exemplos de músicas que o CantaAI pode encontrar"
+        >
+          <li class="example-card">
             <span class="example-card__label">Você lembra:</span>
-            <p class="example-card__text">"everybody watch her ooh ooh"</p>
+            <p class="example-card__text">“everybody watch her ooh ooh”</p>
             <strong class="example-card__result"
               >→ This Is What You Came For</strong
             >
-          </article>
+          </li>
 
-          <article class="example-card">
+          <li class="example-card">
             <span class="example-card__label">Você canta:</span>
-            <p class="example-card__text">"ooouuooo i get to you"</p>
+            <p class="example-card__text">“ooouuooo i get to you”</p>
             <strong class="example-card__result">→ Iris</strong>
-          </article>
+          </li>
 
-          <article class="example-card">
+          <li class="example-card">
             <span class="example-card__label">Você escreve errado:</span>
-            <p class="example-card__text">"beatls yesterday"</p>
+            <p class="example-card__text">“beatls yesterday”</p>
             <strong class="example-card__result"
               >→ Yesterday - The Beatles</strong
             >
-          </article>
-        </div>
+          </li>
+        </ul>
       </section>
     </main>
   </body>

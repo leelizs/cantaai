@@ -4,6 +4,11 @@ const ACRCLOUD_ENDPOINT = "/v1/identify";
 const ACRCLOUD_DATA_TYPE = "audio";
 const ACRCLOUD_SIGNATURE_VERSION = "1";
 const MAX_AUDIO_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_AUDIO_DURATION_SECONDS = 20;
+const DEFAULT_TIMEOUT_MS = 20000;
+const ACRCLOUD_TIMEOUT_MS = 22000;
+const GEMINI_TIMEOUT_MS = 30000;
+const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
 
 const GEMINI_API_BASE_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
@@ -37,11 +42,11 @@ class PublicError extends Error {
 
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") {
-    return createResponse(200, {});
+    return createResponse(event, 204, null);
   }
 
   if (event.httpMethod !== "POST") {
-    return createResponse(405, {
+    return createResponse(event, 405, {
       success: false,
       error: "Método não permitido.",
       userMessage: "Essa ação não é permitida.",
@@ -50,17 +55,28 @@ exports.handler = async function (event) {
   }
 
   try {
-    const body = JSON.parse(event.body || "{}");
-
+    const body = parseRequestBody(event.body);
     const mode = normalizeRecognitionMode(body.mode);
     const audioBase64 = body.audioBase64;
-    const mimeType = body.mimeType || "audio/webm";
+    const mimeType = normalizeMimeType(body.mimeType || "audio/webm");
+    const durationSeconds = Number(body.durationSeconds || 0);
 
     if (!audioBase64) {
       throw new PublicError({
         statusCode: 400,
         errorType: "missing_audio",
         userMessage: "Nenhum áudio foi enviado.",
+      });
+    }
+
+    if (
+      durationSeconds &&
+      (durationSeconds < 0 || durationSeconds > MAX_AUDIO_DURATION_SECONDS)
+    ) {
+      throw new PublicError({
+        statusCode: 400,
+        errorType: "invalid_duration",
+        userMessage: "A duração do áudio enviado não parece válida.",
       });
     }
 
@@ -88,7 +104,7 @@ exports.handler = async function (event) {
 
       const speech = await extractSpeechQueryWithGemini(audioBase64, mimeType);
 
-      return createResponse(200, {
+      return createResponse(event, 200, {
         success: true,
         mode,
         confidence: speech.query ? "speech" : CONFIDENCE.NONE,
@@ -97,6 +113,7 @@ exports.handler = async function (event) {
         debug: {
           provider: "gemini",
           audioBytes: audioBuffer.length,
+          durationSeconds: durationSeconds || null,
         },
       });
     }
@@ -107,7 +124,7 @@ exports.handler = async function (event) {
     const matches = normalizeAcrCloudResult(acrResult);
     const confidence = getRecognitionConfidence(matches);
 
-    return createResponse(200, {
+    return createResponse(event, 200, {
       success: true,
       mode,
       confidence,
@@ -123,6 +140,7 @@ exports.handler = async function (event) {
         acrStatus: acrResult.status || null,
         bestScore: matches[0]?.score || 0,
         audioBytes: audioBuffer.length,
+        durationSeconds: durationSeconds || null,
       },
     });
   } catch (error) {
@@ -130,7 +148,7 @@ exports.handler = async function (event) {
 
     const publicError = normalizePublicError(error);
 
-    return createResponse(publicError.statusCode, {
+    return createResponse(event, publicError.statusCode, {
       success: false,
       error: publicError.userMessage,
       userMessage: publicError.userMessage,
@@ -165,7 +183,6 @@ async function recognizeWithAcrCloud(audioBuffer, mimeType) {
     .digest("base64");
 
   const formData = new FormData();
-
   const audioBlob = new Blob([audioBuffer], {
     type: mimeType,
   });
@@ -178,10 +195,14 @@ async function recognizeWithAcrCloud(audioBuffer, mimeType) {
   formData.append("signature", signature);
   formData.append("timestamp", timestamp);
 
-  const response = await fetch(`https://${host}${ACRCLOUD_ENDPOINT}`, {
-    method: "POST",
-    body: formData,
-  });
+  const response = await fetchWithTimeout(
+    `https://${host}${ACRCLOUD_ENDPOINT}`,
+    {
+      method: "POST",
+      body: formData,
+    },
+    ACRCLOUD_TIMEOUT_MS,
+  );
 
   const responseText = await response.text();
 
@@ -194,9 +215,9 @@ async function recognizeWithAcrCloud(audioBuffer, mimeType) {
     });
   }
 
-  try {
-    return JSON.parse(responseText);
-  } catch (error) {
+  const data = safeJsonParse(responseText, null);
+
+  if (!data) {
     throw new PublicError({
       statusCode: 502,
       errorType: "acrcloud_invalid_response",
@@ -204,6 +225,8 @@ async function recognizeWithAcrCloud(audioBuffer, mimeType) {
         "O reconhecimento por áudio retornou uma resposta inválida. Tente novamente.",
     });
   }
+
+  return data;
 }
 
 /* =========================
@@ -211,7 +234,7 @@ async function recognizeWithAcrCloud(audioBuffer, mimeType) {
 ========================= */
 
 async function extractSpeechQueryWithGemini(audioBase64, mimeType) {
-  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   const cleanBase64 = getCleanBase64(audioBase64);
 
   const prompt = `
@@ -264,45 +287,59 @@ Retorne apenas JSON válido neste formato:
 
   const url = `${GEMINI_API_BASE_URL}/${encodeURIComponent(
     model,
-  )}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+  )}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: prompt,
-            },
-            {
-              inlineData: {
-                mimeType,
-                data: cleanBase64,
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: prompt,
+              },
+              {
+                inlineData: {
+                  mimeType,
+                  data: cleanBase64,
+                },
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 128,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              query: {
+                type: "string",
+              },
+              confidence: {
+                type: "number",
               },
             },
-          ],
+            required: ["query", "confidence"],
+          },
         },
-      ],
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: "application/json",
-      },
-    }),
-  });
+      }),
+    },
+    GEMINI_TIMEOUT_MS,
+  );
+
+  const responseText = await response.text();
 
   if (!response.ok) {
-    const errorText = await response.text();
-
-    if (
-      response.status === 429 ||
-      errorText.includes("RESOURCE_EXHAUSTED") ||
-      errorText.toLowerCase().includes("quota")
-    ) {
+    if (isQuotaError(response.status, responseText)) {
       throw new PublicError({
         statusCode: 429,
         errorType: "gemini_quota_exceeded",
@@ -319,7 +356,7 @@ Retorne apenas JSON válido neste formato:
     });
   }
 
-  const data = await response.json();
+  const data = safeJsonParse(responseText, {});
   const content = extractGeminiText(data);
 
   if (!content) {
@@ -331,30 +368,23 @@ Retorne apenas JSON válido neste formato:
     };
   }
 
-  try {
-    const parsed = JSON.parse(stripJsonMarkdown(content));
+  const parsed = safeJsonParse(stripJsonMarkdown(content), {});
 
-    return {
-      aiUsed: true,
-      query: String(parsed.query || "").trim(),
-      confidence: Number(parsed.confidence || 0),
-      error: null,
-    };
-  } catch (error) {
-    return {
-      aiUsed: true,
-      query: "",
-      confidence: 0,
-      error: null,
-    };
-  }
+  return {
+    aiUsed: true,
+    query: normalizeSpeechQuery(parsed.query),
+    confidence: clampNumber(parsed.confidence, 0, 100),
+    error: null,
+  };
 }
 
 function extractGeminiText(data) {
-  const candidates = data.candidates || [];
+  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
 
   for (const candidate of candidates) {
-    const parts = candidate.content?.parts || [];
+    const parts = Array.isArray(candidate.content?.parts)
+      ? candidate.content.parts
+      : [];
 
     for (const part of parts) {
       if (typeof part.text === "string") {
@@ -394,7 +424,7 @@ function normalizeAcrCloudResult(acrResult) {
     normalizeTrack(item, "music"),
   );
 
-  return [...normalizedHumming, ...normalizedMusic]
+  return removeDuplicatedTracks([...normalizedHumming, ...normalizedMusic])
     .filter((item) => item.title)
     .sort((a, b) => b.score - a.score);
 }
@@ -408,14 +438,13 @@ function normalizeTrack(item, type) {
 
   return {
     type,
-    title: item.title || "",
+    title: String(item.title || "").trim(),
     artist: artists.join(", ") || "Artista desconhecido",
     album: item.album?.name || "",
-    score: Number(item.score || 0),
+    score: clampNumber(item.score, 0, 100),
     releaseDate: item.release_date || "",
-    durationMs: item.duration_ms || null,
+    durationMs: Number(item.duration_ms || 0) || null,
     acrid: item.acrid || "",
-    externalMetadata,
     links: createExternalLinks(externalMetadata),
   };
 }
@@ -428,15 +457,15 @@ function createExternalLinks(externalMetadata) {
   const youtubeVideoId = externalMetadata.youtube?.vid;
 
   if (deezerTrackId) {
-    links.deezer = `https://www.deezer.com/track/${deezerTrackId}`;
+    links.deezer = `https://www.deezer.com/track/${encodeURIComponent(deezerTrackId)}`;
   }
 
   if (spotifyTrackId) {
-    links.spotify = `https://open.spotify.com/track/${spotifyTrackId}`;
+    links.spotify = `https://open.spotify.com/track/${encodeURIComponent(spotifyTrackId)}`;
   }
 
   if (youtubeVideoId) {
-    links.youtube = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
+    links.youtube = `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeVideoId)}`;
   }
 
   return links;
@@ -464,9 +493,25 @@ function getRecognitionConfidence(matches) {
    Helpers
 ========================= */
 
+function parseRequestBody(body) {
+  try {
+    return JSON.parse(body || "{}");
+  } catch (error) {
+    throw new PublicError({
+      statusCode: 400,
+      errorType: "invalid_json",
+      userMessage: "O corpo da requisição está inválido.",
+    });
+  }
+}
+
 function normalizeRecognitionMode(mode) {
   if (mode === RECOGNITION_MODES.HUMMING) {
     return RECOGNITION_MODES.HUMMING;
+  }
+
+  if (mode === RECOGNITION_MODES.SPEECH) {
+    return RECOGNITION_MODES.SPEECH;
   }
 
   return RECOGNITION_MODES.SPEECH;
@@ -479,11 +524,11 @@ function validateAcrCloudEnvironmentVariables() {
     "ACRCLOUD_ACCESS_SECRET",
   ];
 
-  const hasMissingVariable = requiredVariables.some(
+  const missingVariables = requiredVariables.filter(
     (variableName) => !process.env[variableName],
   );
 
-  if (hasMissingVariable) {
+  if (missingVariables.length > 0) {
     throw new PublicError({
       statusCode: 500,
       errorType: "acrcloud_not_configured",
@@ -509,17 +554,23 @@ function normalizePublicError(error) {
   }
 
   const message = String(error?.message || "");
+  const lowerMessage = message.toLowerCase();
 
-  if (
-    message.includes("RESOURCE_EXHAUSTED") ||
-    message.toLowerCase().includes("quota") ||
-    message.includes("429")
-  ) {
+  if (isQuotaError(null, message)) {
     return new PublicError({
       statusCode: 429,
       errorType: "quota_exceeded",
       userMessage:
         "O limite diário da IA foi atingido. Tente novamente mais tarde ou use o modo Cantarolar.",
+    });
+  }
+
+  if (lowerMessage.includes("abort") || lowerMessage.includes("timeout")) {
+    return new PublicError({
+      statusCode: 504,
+      errorType: "timeout",
+      userMessage:
+        "A análise demorou demais. Tente novamente com uma gravação mais clara.",
     });
   }
 
@@ -531,8 +582,20 @@ function normalizePublicError(error) {
   });
 }
 
+function isQuotaError(statusCode, text) {
+  const message = String(text || "").toLowerCase();
+
+  return (
+    statusCode === 429 ||
+    message.includes("resource_exhausted") ||
+    message.includes("quota") ||
+    message.includes("rate limit") ||
+    message.includes("429")
+  );
+}
+
 function normalizeHost(host) {
-  return String(host)
+  return String(host || "")
     .replace("https://", "")
     .replace("http://", "")
     .replace(/\/$/, "")
@@ -540,13 +603,56 @@ function normalizeHost(host) {
 }
 
 function base64ToBuffer(base64) {
-  return Buffer.from(getCleanBase64(base64), "base64");
+  const cleanBase64 = getCleanBase64(base64);
+
+  if (!isProbablyBase64(cleanBase64)) {
+    throw new PublicError({
+      statusCode: 400,
+      errorType: "invalid_audio_base64",
+      userMessage: "O áudio enviado está em um formato inválido.",
+    });
+  }
+
+  return Buffer.from(cleanBase64, "base64");
 }
 
 function getCleanBase64(base64) {
-  return String(base64).includes(",")
-    ? String(base64).split(",").pop()
-    : String(base64);
+  const text = String(base64 || "");
+
+  return text.includes(",") ? text.split(",").pop() : text;
+}
+
+function isProbablyBase64(value) {
+  const text = String(value || "").trim();
+
+  if (!text || text.length % 4 === 1) {
+    return false;
+  }
+
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(text);
+}
+
+function normalizeMimeType(mimeType) {
+  const allowedMimeTypes = [
+    "audio/webm",
+    "audio/webm;codecs=opus",
+    "audio/ogg",
+    "audio/ogg;codecs=opus",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+  ];
+
+  const cleanMimeType = String(mimeType || "audio/webm")
+    .toLowerCase()
+    .trim();
+
+  if (allowedMimeTypes.includes(cleanMimeType)) {
+    return cleanMimeType;
+  }
+
+  return "audio/webm";
 }
 
 function getAudioFileName(mimeType) {
@@ -562,18 +668,115 @@ function getAudioFileName(mimeType) {
     return "recording.mp3";
   }
 
+  if (mimeType.includes("wav")) {
+    return "recording.wav";
+  }
+
   return "recording.webm";
 }
 
-function createResponse(statusCode, body) {
+function normalizeSpeechQuery(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+function removeDuplicatedTracks(tracks) {
+  const unique = new Map();
+
+  tracks.forEach((track) => {
+    const key =
+      track.acrid ||
+      `${normalizeText(track.title)}:${normalizeText(track.artist)}`;
+
+    if (key && !unique.has(key)) {
+      unique.set(key, track);
+    }
+  });
+
+  return Array.from(unique.values());
+}
+
+function normalizeText(text) {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s'-]/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .trim();
+}
+
+function clampNumber(value, min, max) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return min;
+  }
+
+  return Math.min(Math.max(number, min), max);
+}
+
+function safeJsonParse(text, fallbackValue) {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return fallbackValue;
+  }
+}
+
+async function fetchWithTimeout(
+  url,
+  options = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+) {
+  if (!globalThis.AbortController) {
+    return fetch(url, options);
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function getAllowedOrigin(event) {
+  const allowedOrigin = process.env.ALLOWED_ORIGIN || "*";
+  const requestOrigin = event.headers?.origin || event.headers?.Origin || "";
+
+  if (allowedOrigin === "*") {
+    return "*";
+  }
+
+  const allowedOrigins = allowedOrigin
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return allowedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : allowedOrigins[0] || "*";
+}
+
+function createResponse(event, statusCode, body) {
   return {
     statusCode,
     headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": getAllowedOrigin(event),
       "Access-Control-Allow-Headers": "Content-Type",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
     },
-    body: JSON.stringify(body),
+    body: body === null ? "" : JSON.stringify(body),
   };
 }

@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b18" />
 
     <title>CantaAI - Buscar música</title>
 
@@ -14,9 +15,18 @@
     <link rel="stylesheet" href="./search.css" />
     <script src="./search.js" defer></script>
   </head>
+
   <body>
-    <main class="search-page">
-      <a href="../home/" class="back-link">← Voltar</a>
+    <a class="skip-link" href="#conteudo-principal">Pular para o conteúdo</a>
+
+    <main id="conteudo-principal" class="search-page">
+      <a
+        href="../home/"
+        class="back-link"
+        aria-label="Voltar para a página inicial"
+      >
+        ← Voltar
+      </a>
 
       <section class="search-hero" aria-labelledby="search-title">
         <p class="search-hero__tag">Busca por texto</p>
@@ -31,26 +41,43 @@
         </p>
       </section>
 
-      <section class="search-box" aria-label="Formulário de busca">
+      <form
+        id="searchForm"
+        class="search-box"
+        role="search"
+        aria-label="Buscar música por texto"
+      >
         <label for="searchInput" class="sr-only">Buscar música</label>
 
         <input
-          type="text"
+          type="search"
           id="searchInput"
+          name="q"
+          maxlength="180"
+          spellcheck="true"
           placeholder='Ex: "beatls yesterday", "blinding ligths", "bad gai"'
           autocomplete="off"
         />
 
-        <button id="searchButton" type="button">Buscar música</button>
-      </section>
+        <button id="searchButton" type="submit">Buscar música</button>
+      </form>
 
-      <p id="status" class="status" role="status">Digite algo para começar.</p>
+      <p id="status" class="status" role="status" aria-live="polite">
+        Digite algo para começar.
+      </p>
 
       <section
         id="results"
         class="results"
         aria-label="Resultados da busca"
+        aria-live="polite"
       ></section>
+
+      <noscript>
+        <p class="noscript-warning">
+          O CantaAI precisa de JavaScript ativado para buscar músicas.
+        </p>
+      </noscript>
     </main>
   </body>
 </html>

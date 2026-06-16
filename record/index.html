@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b18" />
 
     <title>CantaAI - Buscar por voz</title>
 
@@ -16,8 +17,16 @@
   </head>
 
   <body>
-    <main class="record-page">
-      <a href="../home/" class="back-link">← Voltar</a>
+    <a class="skip-link" href="#conteudo-principal">Pular para o conteúdo</a>
+
+    <main id="conteudo-principal" class="record-page">
+      <a
+        href="../home/"
+        class="back-link"
+        aria-label="Voltar para a página inicial"
+      >
+        ← Voltar
+      </a>
 
       <section class="record-hero" aria-labelledby="record-title">
         <p class="record-hero__tag">Busca por áudio</p>
@@ -36,7 +45,11 @@
         <fieldset class="mode-selector" aria-label="Escolha o tipo de busca">
           <legend>Como você quer buscar?</legend>
 
-          <label class="mode-card is-selected" for="modeSpeech">
+          <label
+            class="mode-card is-selected"
+            for="modeSpeech"
+            data-mode-card="speech"
+          >
             <input
               id="modeSpeech"
               type="radio"
@@ -45,7 +58,7 @@
               checked
             />
 
-            <span class="mode-card__icon">🗣️</span>
+            <span class="mode-card__icon" aria-hidden="true">🗣️</span>
 
             <span class="mode-card__content">
               <strong>Falar o que lembra</strong>
@@ -53,7 +66,7 @@
             </span>
           </label>
 
-          <label class="mode-card" for="modeHumming">
+          <label class="mode-card" for="modeHumming" data-mode-card="humming">
             <input
               id="modeHumming"
               type="radio"
@@ -61,7 +74,7 @@
               value="humming"
             />
 
-            <span class="mode-card__icon">🎵</span>
+            <span class="mode-card__icon" aria-hidden="true">🎵</span>
 
             <span class="mode-card__content">
               <strong>Cantarolar melodia</strong>
@@ -81,6 +94,9 @@
             id="speechTranscript"
             class="speech-transcript"
             rows="3"
+            maxlength="180"
+            spellcheck="true"
+            autocomplete="off"
             placeholder="Ex: smooth criminal michael jackson"
           ></textarea>
 
@@ -90,14 +106,21 @@
           </small>
         </div>
 
-        <div class="recorder-visual" id="recorderVisual">
-          <div class="recorder-pulse"></div>
-          <span class="recorder-icon">🎤</span>
+        <div
+          class="recorder-visual"
+          id="recorderVisual"
+          aria-label="Microfone parado"
+          role="img"
+        >
+          <div class="recorder-pulse" aria-hidden="true"></div>
+          <span class="recorder-icon" aria-hidden="true">🎤</span>
         </div>
 
-        <p id="recordTimer" class="record-timer">00:00</p>
+        <p id="recordTimer" class="record-timer" aria-label="Tempo gravado">
+          00:00
+        </p>
 
-        <div class="record-actions">
+        <div class="record-actions" aria-label="Controles da gravação">
           <button
             id="startRecordButton"
             class="button button--primary"
@@ -125,7 +148,14 @@
           </button>
         </div>
 
-        <audio id="audioPreview" class="audio-preview" controls hidden></audio>
+        <audio
+          id="audioPreview"
+          class="audio-preview"
+          controls
+          preload="metadata"
+          aria-label="Prévia da gravação"
+          hidden
+        ></audio>
 
         <button
           id="analyzeButton"
@@ -136,7 +166,7 @@
           Buscar música
         </button>
 
-        <p id="status" class="status" role="status">
+        <p id="status" class="status" role="status" aria-live="polite">
           Escolha um modo e clique em começar.
         </p>
       </section>
@@ -153,31 +183,38 @@
           Dicas para funcionar melhor
         </h2>
 
-        <div class="tips-grid">
-          <article class="tip-card">
+        <ul class="tips-grid">
+          <li class="tip-card">
             <strong id="tipOneTitle">Fale de forma simples</strong>
             <p id="tipOneText">
               Diga o nome da música, artista ou um pedaço da letra que você
               lembra.
             </p>
-          </article>
+          </li>
 
-          <article class="tip-card">
+          <li class="tip-card">
             <strong id="tipTwoTitle">Corrija se precisar</strong>
             <p id="tipTwoText">
               Se o CantaAI entender errado, edite o texto antes de buscar.
             </p>
-          </article>
+          </li>
 
-          <article class="tip-card">
+          <li class="tip-card">
             <strong id="tipThreeTitle">IA só se você pedir</strong>
             <p id="tipThreeText">
               Primeiro o CantaAI busca sem gastar IA. Depois você pode refinar
               se precisar.
             </p>
-          </article>
-        </div>
+          </li>
+        </ul>
       </section>
+
+      <noscript>
+        <p class="noscript-warning">
+          O CantaAI precisa de JavaScript ativado para gravar áudio e buscar
+          músicas.
+        </p>
+      </noscript>
     </main>
   </body>
 </html>

@@ -3,11 +3,112 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070b18" />
+
     <title>CantaAI</title>
-  </head>
-  <body>
+
+    <meta
+      name="description"
+      content="Encontre músicas escrevendo errado, lembrando só um pedaço da letra ou cantando do seu jeito."
+    />
+
+    <meta http-equiv="refresh" content="0; url=./home/" />
+
+    <style>
+      :root {
+        --color-background: #070b18;
+        --color-background-light: #101b3d;
+        --color-text: #ffffff;
+        --color-text-muted: #cfd6ff;
+        --color-primary-light: #9aa7ff;
+        --radius-sm: 14px;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        min-height: 100svh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        font-family: Arial, Helvetica, sans-serif;
+        background:
+          radial-gradient(
+            circle at top,
+            rgba(79, 95, 247, 0.24),
+            transparent 32%
+          ),
+          linear-gradient(
+            135deg,
+            var(--color-background),
+            var(--color-background-light)
+          );
+        color: var(--color-text);
+        text-align: center;
+      }
+
+      main {
+        display: grid;
+        gap: 14px;
+        max-width: 460px;
+      }
+
+      h1 {
+        font-size: clamp(38px, 8vw, 64px);
+        line-height: 1;
+        letter-spacing: -0.05em;
+      }
+
+      p {
+        color: var(--color-text-muted);
+        line-height: 1.6;
+      }
+
+      a {
+        width: fit-content;
+        min-height: 46px;
+        margin: 8px auto 0;
+        padding: 0 18px;
+        border-radius: var(--radius-sm);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--color-text);
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      a:hover {
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      a:focus-visible {
+        outline: 3px solid #ffffff;
+        outline-offset: 4px;
+      }
+    </style>
+
     <script>
-      window.location.href = "./home/";
+      window.location.replace("./home/");
     </script>
+  </head>
+
+  <body>
+    <main>
+      <h1>CantaAI</h1>
+
+      <p>Redirecionando para a página inicial...</p>
+
+      <p>
+        Se nada acontecer,
+        <a href="./home/">clique aqui para entrar no CantaAI</a>.
+      </p>
+    </main>
   </body>
 </html>
