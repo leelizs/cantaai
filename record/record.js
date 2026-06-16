@@ -218,14 +218,16 @@ function handleRecordingStop() {
   elements.analyzeButton.disabled = false;
 }
 
-function resetRecording() {
+async function resetRecording() {
   if (state.isRecording) {
     return;
   }
 
   resetAudioState();
   setRecordingUI(false);
-  setStatus("Clique em começar e grave novamente.");
+  setStatus("Preparando nova gravação...");
+
+  await startRecording();
 }
 
 function analyzeRecording() {

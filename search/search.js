@@ -67,6 +67,21 @@ function createElement(tag, className, textContent) {
   return element;
 }
 
+function pauseOtherAudios(currentAudio) {
+  const audios = document.querySelectorAll("audio");
+
+  audios.forEach((audio) => {
+    if (audio !== currentAudio) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  });
+}
+
+function handleAudioPlay(event) {
+  pauseOtherAudios(event.currentTarget);
+}
+
 /* =========================
    Algoritmo de Similaridade
 ========================= */
@@ -312,6 +327,7 @@ function createMusicCard(music, isBestGuess = false) {
     const audio = document.createElement("audio");
     audio.controls = true;
     audio.src = music.preview;
+    audio.addEventListener("play", handleAudioPlay);
     actions.appendChild(audio);
   } else {
     const noPreview = createElement("span", "", "Prévia indisponível");
