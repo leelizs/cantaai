@@ -253,28 +253,17 @@ function removeDuplicatedMusics(musics) {
 }
 
 async function searchDeezer(query) {
-  const searchTerms = createSearchTerms(query);
-  const allResults = [];
+  const url = `/.netlify/functions/search-music?query=${encodeURIComponent(query)}`;
 
-  for (const term of searchTerms) {
-    try {
-      const response = await searchDeezerWithJsonp(term);
+  const response = await fetch(url);
 
-      if (response && Array.isArray(response.data)) {
-        allResults.push(...response.data);
-      }
-    } catch (error) {
-      console.log("Erro na busca:", error);
-    }
+  if (!response.ok) {
+    throw new Error("Erro ao buscar músicas no backend.");
   }
 
-  return removeDuplicatedMusics(allResults)
-    .map((music) => ({
-      ...music,
-      similarity: calculateSimilarity(query, music),
-    }))
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, MAX_RESULTS);
+  const data = await response.json();
+
+  return data.results || [];
 }
 
 /* =========================
