@@ -1,0 +1,342 @@
+:root {
+  --color-background: #070b18;
+  --color-background-light: #101b3d;
+
+  --color-text: #ffffff;
+  --color-text-muted: #cfd6ff;
+  --color-primary: #5d6cfc;
+  --color-primary-light: #7c8cff;
+  --color-danger: #ff5d7a;
+
+  --color-card: rgba(255, 255, 255, 0.08);
+  --color-card-hover: rgba(255, 255, 255, 0.12);
+
+  --radius-sm: 14px;
+  --radius-md: 18px;
+  --radius-lg: 28px;
+
+  --transition-default: 0.2s ease;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(93, 108, 252, 0.22), transparent 30%),
+    linear-gradient(
+      135deg,
+      var(--color-background),
+      var(--color-background-light)
+    );
+  color: var(--color-text);
+}
+
+button,
+audio {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+a {
+  color: inherit;
+}
+
+.record-page {
+  width: 100%;
+  min-height: 100vh;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 35px 20px;
+}
+
+/* =========================
+   Header
+========================= */
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 45px;
+
+  color: var(--color-primary-light);
+  font-weight: 700;
+  text-decoration: none;
+
+  transition: opacity var(--transition-default);
+}
+
+.back-link:hover {
+  opacity: 0.8;
+}
+
+.record-hero {
+  margin-bottom: 35px;
+  text-align: center;
+}
+
+.record-hero__tag {
+  margin-bottom: 12px;
+
+  color: var(--color-primary-light);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.record-hero__title {
+  margin-bottom: 16px;
+  font-size: clamp(34px, 5vw, 48px);
+  line-height: 1.1;
+}
+
+.record-hero__description {
+  max-width: 720px;
+  margin: 0 auto;
+
+  color: var(--color-text-muted);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+/* =========================
+   Recorder
+========================= */
+
+.recorder-card {
+  max-width: 620px;
+  margin: 0 auto 42px;
+  padding: 28px;
+  border-radius: var(--radius-lg);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+
+  background: var(--color-card);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.recorder-visual {
+  position: relative;
+
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+
+  display: grid;
+  place-items: center;
+
+  background: rgba(93, 108, 252, 0.16);
+  border: 1px solid rgba(124, 140, 255, 0.35);
+}
+
+.recorder-visual.is-recording {
+  border-color: rgba(255, 93, 122, 0.65);
+  background: rgba(255, 93, 122, 0.12);
+}
+
+.recorder-pulse {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background: rgba(93, 108, 252, 0.18);
+}
+
+.recorder-visual.is-recording .recorder-pulse {
+  animation: pulse 1.2s infinite;
+  background: rgba(255, 93, 122, 0.22);
+}
+
+.recorder-icon {
+  position: relative;
+  z-index: 1;
+  font-size: 44px;
+}
+
+.record-timer {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.record-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.button {
+  min-height: 48px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  color: var(--color-text);
+  font-weight: 700;
+
+  transition:
+    transform var(--transition-default),
+    filter var(--transition-default),
+    background var(--transition-default);
+}
+
+.button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.button--primary {
+  background: var(--color-primary);
+}
+
+.button--primary:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.button--secondary {
+  background: var(--color-danger);
+}
+
+.button--ghost {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.button--ghost:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.button--analyze {
+  width: 100%;
+  max-width: 320px;
+  background: linear-gradient(135deg, #7c8cff, #5d6cfc);
+}
+
+.audio-preview {
+  width: 100%;
+  max-width: 420px;
+}
+
+.status {
+  color: #aeb8e8;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* =========================
+   Tips
+========================= */
+
+.record-tips {
+  width: 100%;
+}
+
+.section-title {
+  margin-bottom: 22px;
+  text-align: center;
+  font-size: 26px;
+}
+
+.tips-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.tip-card {
+  padding: 20px;
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+
+  transition:
+    transform var(--transition-default),
+    background var(--transition-default);
+}
+
+.tip-card:hover {
+  transform: translateY(-2px);
+  background: var(--color-card-hover);
+}
+
+.tip-card strong {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.tip-card p {
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+/* =========================
+   Animations
+========================= */
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+
+  70% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
+/* =========================
+   Responsive
+========================= */
+
+@media (max-width: 760px) {
+  .record-page {
+    padding-top: 24px;
+  }
+
+  .back-link {
+    margin-bottom: 34px;
+  }
+
+  .record-hero__description {
+    font-size: 16px;
+  }
+
+  .recorder-card {
+    padding: 24px 18px;
+  }
+
+  .record-actions {
+    width: 100%;
+  }
+
+  .button {
+    width: 100%;
+  }
+
+  .tips-grid {
+    grid-template-columns: 1fr;
+  }
+}

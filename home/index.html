@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>CantaAI - Descubra músicas</title>
+
+    <meta
+      name="description"
+      content="Encontre músicas escrevendo errado, lembrando só um pedaço da letra ou cantando do seu jeito."
+    />
+
+    <link rel="stylesheet" href="./home.css" />
+    <script src="./home.js" defer></script>
+  </head>
+  <body>
+    <main class="home-page">
+      <section class="hero" aria-labelledby="hero-title">
+        <p class="hero__tag">Busca inteligente de músicas</p>
+
+        <h1 id="hero-title" class="hero__title">CantaAI</h1>
+
+        <p class="hero__description">
+          Encontre músicas mesmo escrevendo errado, lembrando só um pedaço da
+          letra ou cantando do seu jeito.
+        </p>
+
+        <div class="hero__actions">
+          <a href="../search/" class="button button--primary">
+            🔍 Buscar por texto
+          </a>
+
+          <a href="../record/" class="button button--secondary">
+            🎤 Cantar ou cantarolar
+          </a>
+        </div>
+      </section>
+
+      <section class="examples" aria-labelledby="examples-title">
+        <h2 id="examples-title" class="section-title">Exemplos de busca</h2>
+
+        <div class="examples__grid">
+          <article class="example-card">
+            <span class="example-card__label">Você lembra:</span>
+            <p class="example-card__text">"everybody watch her ooh ooh"</p>
+            <strong class="example-card__result"
+              >→ This Is What You Came For</strong
+            >
+          </article>
+
+          <article class="example-card">
+            <span class="example-card__label">Você canta:</span>
+            <p class="example-card__text">"ooouuooo i get to you"</p>
+            <strong class="example-card__result">→ Iris</strong>
+          </article>
+
+          <article class="example-card">
+            <span class="example-card__label">Você escreve errado:</span>
+            <p class="example-card__text">"beatls yesterday"</p>
+            <strong class="example-card__result"
+              >→ Yesterday - The Beatles</strong
+            >
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>CantaAI - Buscar música</title>
+
+    <meta
+      name="description"
+      content="Busque músicas escrevendo errado, incompleto ou misturando artista com trecho da letra."
+    />
+
+    <link rel="stylesheet" href="./search.css" />
+    <script src="./search.js" defer></script>
+  </head>
+  <body>
+    <main class="search-page">
+      <a href="../home/" class="back-link">← Voltar</a>
+
+      <section class="search-hero" aria-labelledby="search-title">
+        <p class="search-hero__tag">Busca por texto</p>
+
+        <h1 id="search-title" class="search-hero__title">
+          Escreva do jeito que você lembra.
+        </h1>
+
+        <p class="search-hero__description">
+          Pode escrever errado, incompleto ou misturar artista com trecho da
+          música. O CantaAI tenta encontrar algo parecido.
+        </p>
+      </section>
+
+      <section class="search-box" aria-label="Formulário de busca">
+        <label for="searchInput" class="sr-only">Buscar música</label>
+
+        <input
+          type="text"
+          id="searchInput"
+          placeholder='Ex: "beatls yesterday", "blinding ligths", "bad gai"'
+          autocomplete="off"
+        />
+
+        <button id="searchButton" type="button">Buscar música</button>
+      </section>
+
+      <p id="status" class="status" role="status">Digite algo para começar.</p>
+
+      <section
+        id="results"
+        class="results"
+        aria-label="Resultados da busca"
+      ></section>
+    </main>
+  </body>
+</html>

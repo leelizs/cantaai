@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>CantaAI - Cantar ou cantarolar</title>
+
+    <meta
+      name="description"
+      content="Grave sua voz cantando ou cantarolando para tentar descobrir uma música."
+    />
+
+    <link rel="stylesheet" href="./record.css" />
+    <script src="./record.js" defer></script>
+  </head>
+  <body>
+    <main class="record-page">
+      <a href="../home/" class="back-link">← Voltar</a>
+
+      <section class="record-hero" aria-labelledby="record-title">
+        <p class="record-hero__tag">Busca por áudio</p>
+
+        <h1 id="record-title" class="record-hero__title">
+          Cante ou cantarole a música.
+        </h1>
+
+        <p class="record-hero__description">
+          Grave alguns segundos da melodia, trecho cantado ou cantarolado.
+          Depois o CantaAI vai tentar descobrir qual música parece com o áudio.
+        </p>
+      </section>
+
+      <section class="recorder-card" aria-label="Gravador de áudio">
+        <div class="recorder-visual" id="recorderVisual">
+          <div class="recorder-pulse"></div>
+          <span class="recorder-icon">🎤</span>
+        </div>
+
+        <p id="recordTimer" class="record-timer">00:00</p>
+
+        <div class="record-actions">
+          <button
+            id="startRecordButton"
+            class="button button--primary"
+            type="button"
+          >
+            Começar gravação
+          </button>
+
+          <button
+            id="stopRecordButton"
+            class="button button--secondary"
+            type="button"
+            disabled
+          >
+            Parar
+          </button>
+
+          <button
+            id="resetRecordButton"
+            class="button button--ghost"
+            type="button"
+            disabled
+          >
+            Regravar
+          </button>
+        </div>
+
+        <audio id="audioPreview" class="audio-preview" controls hidden></audio>
+
+        <button
+          id="analyzeButton"
+          class="button button--analyze"
+          type="button"
+          disabled
+        >
+          Analisar gravação
+        </button>
+
+        <p id="status" class="status" role="status">
+          Clique em começar e permita o uso do microfone.
+        </p>
+      </section>
+
+      <section class="record-tips" aria-labelledby="tips-title">
+        <h2 id="tips-title" class="section-title">
+          Dicas para funcionar melhor
+        </h2>
+
+        <div class="tips-grid">
+          <article class="tip-card">
+            <strong>Grave de 8 a 15 segundos</strong>
+            <p>Um trecho muito curto pode dificultar o reconhecimento.</p>
+          </article>
+
+          <article class="tip-card">
+            <strong>Evite muito barulho</strong>
+            <p>Quanto mais limpa a gravação, melhor a chance de acertar.</p>
+          </article>
+
+          <article class="tip-card">
+            <strong>Pode cantar errado</strong>
+            <p>O foco é capturar a melodia ou um trecho reconhecível.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
