@@ -1,11 +1,16 @@
 const DEEZER_API_URL = "https://api.deezer.com/search";
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const GEMINI_API_BASE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models";
 
 const MAX_AI_TERMS = 8;
 const DEEZER_LIMIT = 10;
 const MAX_RESULTS = 12;
 
 exports.handler = async function (event) {
+  if (event.httpMethod === "OPTIONS") {
+    return createResponse(200, {});
+  }
+
   try {
     const query = event.queryStringParameters?.query?.trim();
 
@@ -24,6 +29,7 @@ exports.handler = async function (event) {
       originalQuery: query,
       searchTerms: smartSearch.terms,
       debug: {
+        aiProvider: "gemini",
         aiUsed: smartSearch.aiUsed,
         aiError: smartSearch.aiError,
       },
@@ -45,16 +51,16 @@ exports.handler = async function (event) {
 async function createSmartSearchTerms(query) {
   const fallbackTerms = createFallbackSearchTerms(query);
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     return {
       terms: fallbackTerms,
       aiUsed: false,
-      aiError: "OPENAI_API_KEY não configurada.",
+      aiError: "GEMINI_API_KEY não configurada.",
     };
   }
 
   try {
-    const aiTerms = await generateSearchTermsWithAI(query);
+    const aiTerms = await generateSearchTermsWithGemini(query);
     const mergedTerms = [...aiTerms, ...fallbackTerms];
 
     return {
@@ -63,23 +69,20 @@ async function createSmartSearchTerms(query) {
       aiError: null,
     };
   } catch (error) {
-    console.error("Erro na IA:", error);
+    console.error("Erro na IA Gemini:", error);
 
     return {
       terms: fallbackTerms,
       aiUsed: false,
-      aiError: error.message || "Erro desconhecido na IA.",
+      aiError: error.message || "Erro desconhecido na IA Gemini.",
     };
   }
 }
 
-async function generateSearchTermsWithAI(query) {
-  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+async function generateSearchTermsWithGemini(query) {
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 
-  const messages = [
-    {
-      role: "system",
-      content: `
+  const prompt = `
 Você é uma IA especializada em busca musical.
 
 O usuário pode digitar:
@@ -89,7 +92,7 @@ O usuário pode digitar:
 - palavras fonéticas;
 - uma mistura de artista + som aproximado.
 
-Sua tarefa é transformar a busca ruim em termos úteis para APIs musicais.
+Sua tarefa é transformar a busca ruim em termos úteis para APIs musicais como Deezer, Spotify, Last.fm e MusicBrainz.
 
 Regras:
 - Retorne apenas JSON válido.
@@ -101,6 +104,8 @@ Regras:
 - Não invente uma música específica sem indícios claros.
 - Corrija erros fonéticos prováveis.
 - Priorize músicas, artistas e combinações pesquisáveis.
+- Se o usuário citar artista aproximado, tente transformar em nome correto.
+- Se o usuário citar som parecido com título, gere variações do título.
 
 Formato obrigatório:
 {
@@ -108,40 +113,52 @@ Formato obrigatório:
 }
 
 Exemplos:
+
 Entrada: "bed gui bilie"
-Saída: {
+Saída:
+{
   "terms": ["bad guy billie eilish", "bad guy", "billie eilish bad guy", "billie eilish"]
 }
 
 Entrada: "blinding ligths"
-Saída: {
+Saída:
+{
   "terms": ["blinding lights", "the weeknd blinding lights", "blinding lights the weeknd"]
 }
 
 Entrada: "beatls yesterday"
-Saída: {
+Saída:
+{
   "terms": ["yesterday the beatles", "the beatles yesterday", "yesterday"]
 }
-`,
-    },
-    {
-      role: "user",
-      content: query,
-    },
-  ];
 
-  const response = await fetch(OPENAI_API_URL, {
+Entrada do usuário:
+"${query}"
+`;
+
+  const url = `${GEMINI_API_BASE_URL}/${encodeURIComponent(
+    model,
+  )}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.2,
-      response_format: {
-        type: "json_object",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: "application/json",
       },
     }),
   });
@@ -149,12 +166,12 @@ Saída: {
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(
-      `Falha ao chamar OpenAI: ${response.status} - ${errorText}`,
+      `Falha ao chamar Gemini: ${response.status} - ${errorText}`,
     );
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
+  const content = extractGeminiText(data);
 
   if (!content) {
     return [];
@@ -167,6 +184,22 @@ Saída: {
   }
 
   return parsed.terms.map((term) => String(term).trim()).filter(Boolean);
+}
+
+function extractGeminiText(data) {
+  const candidates = data.candidates || [];
+
+  for (const candidate of candidates) {
+    const parts = candidate.content?.parts || [];
+
+    for (const part of parts) {
+      if (typeof part.text === "string") {
+        return part.text;
+      }
+    }
+  }
+
+  return "";
 }
 
 /* =========================
@@ -457,6 +490,8 @@ function createResponse(statusCode, body) {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
     },
     body: JSON.stringify(body),
   };
