@@ -5,11 +5,6 @@ const elements = {
   resultsContainer: document.getElementById("results"),
 };
 
-const DEEZER_API_URL = "https://api.deezer.com/search";
-const DEEZER_LIMIT = 10;
-const MAX_SEARCH_TERMS = 5;
-const MAX_RESULTS = 12;
-
 let state = {
   results: [],
   latestSearchId: 0,
@@ -19,23 +14,6 @@ let state = {
 /* =========================
    Helpers
 ========================= */
-
-function normalizeText(text) {
-  return String(text)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function escapeHTML(text) {
-  return String(text)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 function setStatus(message) {
   elements.statusText.textContent = message;
@@ -50,6 +28,7 @@ function setLoading(isLoading) {
 }
 
 function clearResults() {
+  pauseAllPreviewAudios();
   elements.resultsContainer.innerHTML = "";
 }
 
@@ -67,8 +46,32 @@ function createElement(tag, className, textContent) {
   return element;
 }
 
-function pauseOtherAudios(currentAudio) {
-  const audios = document.querySelectorAll("audio");
+/* =========================
+   Player customizado
+========================= */
+
+function resetPreviewButtons() {
+  const previewButtons = document.querySelectorAll(".preview-button");
+
+  previewButtons.forEach((button) => {
+    button.textContent = "▶ Ouvir prévia";
+    button.classList.remove("is-playing");
+  });
+}
+
+function pauseAllPreviewAudios() {
+  const audios = document.querySelectorAll(".preview-audio");
+
+  audios.forEach((audio) => {
+    audio.pause();
+    audio.currentTime = 0;
+  });
+
+  resetPreviewButtons();
+}
+
+function pauseOtherPreviewAudios(currentAudio) {
+  const audios = document.querySelectorAll(".preview-audio");
 
   audios.forEach((audio) => {
     if (audio !== currentAudio) {
@@ -76,184 +79,50 @@ function pauseOtherAudios(currentAudio) {
       audio.currentTime = 0;
     }
   });
+
+  resetPreviewButtons();
 }
 
-function handleAudioPlay(event) {
-  pauseOtherAudios(event.currentTarget);
+async function togglePreviewAudio(audio, button) {
+  try {
+    if (audio.paused) {
+      pauseOtherPreviewAudios(audio);
+
+      await audio.play();
+
+      button.textContent = "⏸ Pausar prévia";
+      button.classList.add("is-playing");
+      return;
+    }
+
+    audio.pause();
+    button.textContent = "▶ Ouvir prévia";
+    button.classList.remove("is-playing");
+  } catch (error) {
+    console.log("Erro ao tocar prévia:", error);
+    setStatus("Não foi possível tocar essa prévia agora.");
+  }
+}
+
+function handlePreviewEnded(event) {
+  const audio = event.currentTarget;
+  const player = audio.closest(".preview-player");
+  const button = player?.querySelector(".preview-button");
+
+  if (button) {
+    button.textContent = "▶ Ouvir prévia";
+    button.classList.remove("is-playing");
+  }
 }
 
 /* =========================
-   Algoritmo de Similaridade
+   Backend
 ========================= */
-
-function levenshtein(textA, textB) {
-  const a = normalizeText(textA);
-  const b = normalizeText(textB);
-
-  const matrix = [];
-
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
-
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      const hasSameLetter = b.charAt(i - 1) === a.charAt(j - 1);
-
-      matrix[i][j] = hasSameLetter
-        ? matrix[i - 1][j - 1]
-        : Math.min(
-            matrix[i - 1][j - 1] + 1,
-            matrix[i][j - 1] + 1,
-            matrix[i - 1][j] + 1,
-          );
-    }
-  }
-
-  return matrix[b.length][a.length];
-}
-
-function getWordSimilarity(wordA, wordB) {
-  const a = normalizeText(wordA);
-  const b = normalizeText(wordB);
-
-  if (!a || !b) {
-    return 0;
-  }
-
-  const distance = levenshtein(a, b);
-  const maxLength = Math.max(a.length, b.length);
-
-  return 1 - distance / maxLength;
-}
-
-function calculateSimilarity(query, music) {
-  const normalizedQuery = normalizeText(query);
-  const title = normalizeText(music.title);
-  const artist = normalizeText(music.artist.name);
-  const fullText = `${title} ${artist}`;
-
-  let score = 0;
-
-  if (title === normalizedQuery) {
-    score += 100;
-  }
-
-  if (title.includes(normalizedQuery)) {
-    score += 90;
-  }
-
-  if (fullText.includes(normalizedQuery)) {
-    score += 80;
-  }
-
-  if (artist.includes(normalizedQuery)) {
-    score += 50;
-  }
-
-  const queryWords = normalizedQuery.split(" ").filter(Boolean);
-  const titleWords = title.split(" ").filter(Boolean);
-  const artistWords = artist.split(" ").filter(Boolean);
-  const allMusicWords = [...titleWords, ...artistWords];
-
-  queryWords.forEach((queryWord) => {
-    let bestWordScore = 0;
-
-    allMusicWords.forEach((musicWord) => {
-      const similarity = getWordSimilarity(queryWord, musicWord);
-
-      if (similarity > bestWordScore) {
-        bestWordScore = similarity;
-      }
-    });
-
-    if (bestWordScore >= 0.8) {
-      score += 35;
-    } else if (bestWordScore >= 0.65) {
-      score += 25;
-    } else if (bestWordScore >= 0.5) {
-      score += 12;
-    }
-  });
-
-  const fullTitleSimilarity = getWordSimilarity(normalizedQuery, title);
-
-  if (fullTitleSimilarity >= 0.8) {
-    score += 80;
-  } else if (fullTitleSimilarity >= 0.65) {
-    score += 50;
-  } else if (fullTitleSimilarity >= 0.5) {
-    score += 25;
-  }
-
-  if (music.rank) {
-    score += Math.min(music.rank / 100000, 15);
-  }
-
-  return Math.min(Math.round(score), 99);
-}
-
-/* =========================
-   Deezer API
-========================= */
-
-function searchDeezerWithJsonp(term) {
-  return new Promise((resolve, reject) => {
-    const callbackName = `deezerCallback_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const script = document.createElement("script");
-
-    window[callbackName] = function (data) {
-      delete window[callbackName];
-      script.remove();
-      resolve(data);
-    };
-
-    script.src = `${DEEZER_API_URL}?q=${encodeURIComponent(term)}&limit=${DEEZER_LIMIT}&output=jsonp&callback=${callbackName}`;
-
-    script.onerror = function () {
-      delete window[callbackName];
-      script.remove();
-      reject(new Error("Erro ao buscar na Deezer"));
-    };
-
-    document.body.appendChild(script);
-  });
-}
-
-function createSearchTerms(query) {
-  const normalizedQuery = normalizeText(query);
-
-  const words = normalizedQuery.split(" ").filter((word) => word.length >= 3);
-
-  const terms = [query];
-
-  words.forEach((word) => {
-    if (!terms.includes(word)) {
-      terms.push(word);
-    }
-  });
-
-  return terms.slice(0, MAX_SEARCH_TERMS);
-}
-
-function removeDuplicatedMusics(musics) {
-  const uniqueMusics = new Map();
-
-  musics.forEach((music) => {
-    if (!uniqueMusics.has(music.id)) {
-      uniqueMusics.set(music.id, music);
-    }
-  });
-
-  return Array.from(uniqueMusics.values());
-}
 
 async function searchDeezer(query) {
-  const url = `/.netlify/functions/search-music?query=${encodeURIComponent(query)}`;
+  const url = `/.netlify/functions/search-music?query=${encodeURIComponent(
+    query,
+  )}`;
 
   const response = await fetch(url);
 
@@ -284,6 +153,33 @@ function renderEmptyState(title, description) {
   elements.resultsContainer.appendChild(card);
 }
 
+function createPreviewPlayer(music) {
+  const previewPlayer = createElement("div", "preview-player");
+
+  const previewButton = createElement(
+    "button",
+    "preview-button",
+    "▶ Ouvir prévia",
+  );
+
+  previewButton.type = "button";
+
+  const audio = document.createElement("audio");
+  audio.src = music.preview;
+  audio.className = "preview-audio";
+  audio.preload = "none";
+
+  previewButton.addEventListener("click", () => {
+    togglePreviewAudio(audio, previewButton);
+  });
+
+  audio.addEventListener("ended", handlePreviewEnded);
+
+  previewPlayer.append(previewButton, audio);
+
+  return previewPlayer;
+}
+
 function createMusicCard(music, isBestGuess = false) {
   const card = createElement("article", "music-card");
 
@@ -293,7 +189,7 @@ function createMusicCard(music, isBestGuess = false) {
 
   const cover = document.createElement("img");
   cover.src = music.album?.cover_medium || "https://via.placeholder.com/100";
-  cover.alt = `Capa da música ${escapeHTML(music.title)}`;
+  cover.alt = `Capa da música ${music.title}`;
 
   const info = createElement("div", "music-info");
 
@@ -304,22 +200,23 @@ function createMusicCard(music, isBestGuess = false) {
 
   const title = createElement("h3", "", music.title);
   const artist = createElement("p", "", music.artist.name);
-  const chance = createElement(
+
+  const compatibility = createElement(
     "span",
     "",
-    `Chance de ser essa: ${Math.min(music.similarity, 99)}%`,
+    `Compatibilidade: ${Math.min(music.similarity, 99)}%`,
   );
 
   const actions = createElement("div", "music-actions");
 
   if (music.preview) {
-    const audio = document.createElement("audio");
-    audio.controls = true;
-    audio.src = music.preview;
-    audio.addEventListener("play", handleAudioPlay);
-    actions.appendChild(audio);
+    actions.appendChild(createPreviewPlayer(music));
   } else {
-    const noPreview = createElement("span", "", "Prévia indisponível");
+    const noPreview = createElement(
+      "span",
+      "no-preview",
+      "Prévia indisponível",
+    );
     actions.appendChild(noPreview);
   }
 
@@ -339,7 +236,7 @@ function createMusicCard(music, isBestGuess = false) {
     actions.appendChild(rejectButton);
   }
 
-  info.append(title, artist, chance, actions);
+  info.append(title, artist, compatibility, actions);
   card.append(cover, info);
 
   return card;
@@ -384,6 +281,8 @@ function renderResults(musics) {
 ========================= */
 
 function rejectBestGuess() {
+  pauseAllPreviewAudios();
+
   if (state.results.length <= 1) {
     state.results = [];
 
@@ -437,7 +336,9 @@ async function handleSearch() {
     renderResults(state.results);
   } catch (error) {
     console.log(error);
+
     setStatus("Erro ao buscar músicas. Tente novamente.");
+
     renderEmptyState(
       "Algo deu errado",
       "Não conseguimos buscar agora. Tente novamente em alguns segundos.",
