@@ -9,6 +9,9 @@ const elements = {
   recorderVisual: document.getElementById("recorderVisual"),
 };
 
+const MIN_RECORDING_SECONDS = 8;
+const MAX_RECORDING_SECONDS = 15;
+
 const state = {
   mediaStream: null,
   mediaRecorder: null,
@@ -16,8 +19,11 @@ const state = {
   audioBlob: null,
   audioUrl: null,
   timerInterval: null,
+  maxRecordTimeout: null,
   startedAt: null,
+  recordedDurationSeconds: 0,
   isRecording: false,
+  isAnalyzing: false,
 };
 
 /* =========================
@@ -35,38 +41,96 @@ function formatTime(totalSeconds) {
   return `${minutes}:${seconds}`;
 }
 
+function getElapsedSeconds() {
+  if (!state.startedAt) {
+    return 0;
+  }
+
+  return Math.floor((Date.now() - state.startedAt) / 1000);
+}
+
 function updateTimer() {
   if (!state.startedAt) {
     elements.recordTimer.textContent = "00:00";
     return;
   }
 
-  const elapsedSeconds = Math.floor((Date.now() - state.startedAt) / 1000);
+  const elapsedSeconds = Math.min(getElapsedSeconds(), MAX_RECORDING_SECONDS);
   elements.recordTimer.textContent = formatTime(elapsedSeconds);
 }
 
 function startTimer() {
   state.startedAt = Date.now();
+  state.recordedDurationSeconds = 0;
+
   updateTimer();
 
-  state.timerInterval = setInterval(updateTimer, 500);
+  state.timerInterval = setInterval(() => {
+    updateTimer();
+
+    const elapsedSeconds = getElapsedSeconds();
+    const remainingSeconds = Math.max(
+      MAX_RECORDING_SECONDS - elapsedSeconds,
+      0,
+    );
+
+    if (elapsedSeconds < MIN_RECORDING_SECONDS) {
+      setStatus(
+        `Gravando... continue por pelo menos ${MIN_RECORDING_SECONDS} segundos.`,
+      );
+      return;
+    }
+
+    if (elapsedSeconds < MAX_RECORDING_SECONDS) {
+      setStatus(
+        `Gravando... você pode parar agora. Tempo restante: ${remainingSeconds}s.`,
+      );
+    }
+  }, 500);
 }
 
 function stopTimer() {
+  if (state.startedAt) {
+    state.recordedDurationSeconds = Math.min(
+      getElapsedSeconds(),
+      MAX_RECORDING_SECONDS,
+    );
+  }
+
   clearInterval(state.timerInterval);
+  clearTimeout(state.maxRecordTimeout);
+
   state.timerInterval = null;
+  state.maxRecordTimeout = null;
   state.startedAt = null;
 }
 
 function setRecordingUI(isRecording) {
   state.isRecording = isRecording;
 
-  elements.startButton.disabled = isRecording;
-  elements.stopButton.disabled = !isRecording;
-  elements.resetButton.disabled = isRecording || !state.audioBlob;
-  elements.analyzeButton.disabled = isRecording || !state.audioBlob;
+  elements.startButton.disabled = isRecording || state.isAnalyzing;
+  elements.stopButton.disabled = !isRecording || state.isAnalyzing;
+  elements.resetButton.disabled =
+    isRecording || !state.audioBlob || state.isAnalyzing;
+  elements.analyzeButton.disabled =
+    isRecording || !state.audioBlob || state.isAnalyzing;
 
   elements.recorderVisual.classList.toggle("is-recording", isRecording);
+}
+
+function setAnalyzingUI(isAnalyzing) {
+  state.isAnalyzing = isAnalyzing;
+
+  elements.startButton.disabled = isAnalyzing || state.isRecording;
+  elements.stopButton.disabled = isAnalyzing || !state.isRecording;
+  elements.resetButton.disabled =
+    isAnalyzing || state.isRecording || !state.audioBlob;
+  elements.analyzeButton.disabled =
+    isAnalyzing || state.isRecording || !state.audioBlob;
+
+  elements.analyzeButton.textContent = isAnalyzing
+    ? "Analisando..."
+    : "Analisar gravação";
 }
 
 function clearAudioUrl() {
@@ -82,6 +146,7 @@ function resetAudioState() {
 
   state.audioChunks = [];
   state.audioBlob = null;
+  state.recordedDurationSeconds = 0;
 
   elements.audioPreview.src = "";
   elements.audioPreview.hidden = true;
@@ -109,6 +174,22 @@ function getFriendlyMicrophoneError(error) {
   }
 
   return "Não foi possível acessar o microfone. Verifique as permissões do navegador.";
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      resolve(reader.result);
+    };
+
+    reader.onerror = () => {
+      reject(new Error("Não foi possível ler o áudio gravado."));
+    };
+
+    reader.readAsDataURL(blob);
+  });
 }
 
 /* =========================
@@ -170,25 +251,61 @@ async function startRecording() {
     state.mediaRecorder.addEventListener("stop", handleRecordingStop);
 
     state.mediaRecorder.start();
+
     startTimer();
     setRecordingUI(true);
 
-    setStatus("Gravando... cante ou cantarole por alguns segundos.");
+    state.maxRecordTimeout = setTimeout(() => {
+      stopRecording({
+        force: true,
+        reason: "max-time",
+      });
+    }, MAX_RECORDING_SECONDS * 1000);
+
+    setStatus(
+      `Gravando... grave entre ${MIN_RECORDING_SECONDS} e ${MAX_RECORDING_SECONDS} segundos.`,
+    );
   } catch (error) {
     console.log(error);
+
+    stopTimer();
+    stopMicrophoneTracks();
+
     setStatus(getFriendlyMicrophoneError(error));
     setRecordingUI(false);
   }
 }
 
-function stopRecording() {
+function stopRecording(options = {}) {
+  const { force = false, reason = "manual" } = options;
+
   if (!state.mediaRecorder || state.mediaRecorder.state !== "recording") {
     return;
   }
 
-  state.mediaRecorder.stop();
+  const elapsedSeconds = getElapsedSeconds();
+
+  if (!force && elapsedSeconds < MIN_RECORDING_SECONDS) {
+    const remainingSeconds = MIN_RECORDING_SECONDS - elapsedSeconds;
+
+    setStatus(
+      `Grave pelo menos ${MIN_RECORDING_SECONDS} segundos. Faltam ${remainingSeconds}s.`,
+    );
+
+    return;
+  }
+
   stopTimer();
+
+  state.mediaRecorder.stop();
   setRecordingUI(false);
+
+  if (reason === "max-time") {
+    setStatus(
+      `Gravação finalizada automaticamente em ${MAX_RECORDING_SECONDS} segundos. Você pode ouvir antes de analisar.`,
+    );
+    return;
+  }
 
   setStatus("Gravação finalizada. Você pode ouvir antes de analisar.");
 }
@@ -200,7 +317,19 @@ function handleDataAvailable(event) {
 }
 
 function handleRecordingStop() {
-  const mimeType = state.mediaRecorder.mimeType || "audio/webm";
+  const mimeType = state.mediaRecorder?.mimeType || "audio/webm";
+
+  if (state.recordedDurationSeconds < MIN_RECORDING_SECONDS) {
+    resetAudioState();
+    stopMicrophoneTracks();
+    setRecordingUI(false);
+
+    setStatus(
+      `A gravação ficou curta demais. Grave pelo menos ${MIN_RECORDING_SECONDS} segundos.`,
+    );
+
+    return;
+  }
 
   state.audioBlob = new Blob(state.audioChunks, {
     type: mimeType,
@@ -219,7 +348,7 @@ function handleRecordingStop() {
 }
 
 async function resetRecording() {
-  if (state.isRecording) {
+  if (state.isRecording || state.isAnalyzing) {
     return;
   }
 
@@ -230,15 +359,64 @@ async function resetRecording() {
   await startRecording();
 }
 
-function analyzeRecording() {
+/* =========================
+   Análise com backend
+========================= */
+
+async function analyzeRecording() {
   if (!state.audioBlob) {
     setStatus("Grave um áudio antes de analisar.");
     return;
   }
 
-  setStatus(
-    "Gravação pronta. Próximo passo: enviar esse áudio para o backend com ACRCloud.",
-  );
+  if (state.recordedDurationSeconds < MIN_RECORDING_SECONDS) {
+    setStatus(
+      `A gravação precisa ter pelo menos ${MIN_RECORDING_SECONDS} segundos.`,
+    );
+    return;
+  }
+
+  try {
+    setAnalyzingUI(true);
+    setStatus("Enviando áudio para reconhecimento...");
+
+    const audioBase64 = await blobToBase64(state.audioBlob);
+
+    const response = await fetch("/.netlify/functions/recognize-audio", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        audioBase64,
+        mimeType: state.audioBlob.type || "audio/webm",
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || "Não foi possível reconhecer o áudio.");
+    }
+
+    if (!data.matches || data.matches.length === 0) {
+      setStatus(
+        "Não encontramos nenhuma música parecida. Tente gravar um trecho mais claro.",
+      );
+      return;
+    }
+
+    const bestMatch = data.matches[0];
+
+    setStatus(`Melhor resultado: ${bestMatch.title} - ${bestMatch.artist}`);
+
+    console.log("Resultado ACRCloud:", data);
+  } catch (error) {
+    console.log(error);
+    setStatus(error.message || "Erro ao analisar gravação.");
+  } finally {
+    setAnalyzingUI(false);
+  }
 }
 
 /* =========================
@@ -246,11 +424,12 @@ function analyzeRecording() {
 ========================= */
 
 elements.startButton.addEventListener("click", startRecording);
-elements.stopButton.addEventListener("click", stopRecording);
+elements.stopButton.addEventListener("click", () => stopRecording());
 elements.resetButton.addEventListener("click", resetRecording);
 elements.analyzeButton.addEventListener("click", analyzeRecording);
 
 window.addEventListener("beforeunload", () => {
+  stopTimer();
   stopMicrophoneTracks();
   clearAudioUrl();
 });
