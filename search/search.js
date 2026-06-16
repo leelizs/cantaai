@@ -733,10 +733,8 @@
     });
 
     searchInput.addEventListener("input", () => {
-      const query = normalizeText(searchInput.value);
-
-      if (searchInput.value !== query) {
-        searchInput.value = query;
+      if (searchInput.value.length > MAX_QUERY_LENGTH) {
+        searchInput.value = searchInput.value.slice(0, MAX_QUERY_LENGTH);
       }
     });
 
