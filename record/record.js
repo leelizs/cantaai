@@ -44,7 +44,7 @@ const RECORDING_MODES = {
       oneText:
         "Diga o nome da música, artista ou um pedaço da letra. Não precisa cantar perfeito.",
       twoTitle: "Corrija se precisar",
-      twoText: "Se o navegador entender errado, edite o texto antes de buscar.",
+      twoText: "Se o CantaAI entender errado, edite o texto antes de buscar.",
       threeTitle: "IA só se você pedir",
       threeText:
         "Primeiro o CantaAI busca sem gastar IA. Depois você pode refinar se precisar.",
@@ -113,10 +113,6 @@ function getModeConfig() {
 
 function isSpeechMode() {
   return state.mode === "speech";
-}
-
-function isHummingMode() {
-  return state.mode === "humming";
 }
 
 function setStatus(message) {
@@ -1109,7 +1105,7 @@ function createTextMusicCard(music, isBestGuess = false) {
 function createAiRefinementCard(query) {
   return createInfoCard(
     "Quer uma busca mais precisa com IA?",
-    "A primeira busca não usa IA. Se o resultado não ficou bom, você pode pedir para o CantaAI refinar usando Gemini.",
+    "A primeira busca não usa IA. Se o resultado não ficou bom, você pode pedir para o CantaAI refinar usando IA.",
     {
       label: "Refinar com IA",
       onClick: () =>
