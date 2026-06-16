@@ -13,6 +13,7 @@ exports.handler = async function (event) {
 
   try {
     const query = event.queryStringParameters?.query?.trim();
+    const useAi = parseUseAi(event.queryStringParameters?.useAi);
 
     if (!query) {
       return createResponse(400, {
@@ -20,7 +21,10 @@ exports.handler = async function (event) {
       });
     }
 
-    const smartSearch = await createSmartSearchTerms(query);
+    const smartSearch = await createSmartSearchTerms(query, {
+      useAi,
+    });
+
     const deezerResults = await searchMultipleTermsOnDeezer(smartSearch.terms);
     const uniqueResults = removeDuplicatedMusics(deezerResults);
     const rankedResults = rankResults(query, smartSearch.terms, uniqueResults);
@@ -29,8 +33,10 @@ exports.handler = async function (event) {
       originalQuery: query,
       searchTerms: smartSearch.terms,
       debug: {
-        aiProvider: "gemini",
+        aiProvider: smartSearch.aiRequested ? "gemini" : "none",
+        aiRequested: smartSearch.aiRequested,
         aiUsed: smartSearch.aiUsed,
+        aiSkipped: smartSearch.aiSkipped,
         aiError: smartSearch.aiError,
       },
       results: rankedResults.slice(0, MAX_RESULTS),
@@ -40,6 +46,8 @@ exports.handler = async function (event) {
 
     return createResponse(500, {
       error: "Erro ao buscar músicas.",
+      userMessage:
+        "Não conseguimos buscar músicas agora. Tente novamente em alguns segundos.",
     });
   }
 };
@@ -48,13 +56,26 @@ exports.handler = async function (event) {
    IA: cria termos melhores
 ========================= */
 
-async function createSmartSearchTerms(query) {
+async function createSmartSearchTerms(query, options = {}) {
+  const { useAi = true } = options;
   const fallbackTerms = createFallbackSearchTerms(query);
+
+  if (!useAi) {
+    return {
+      terms: fallbackTerms,
+      aiRequested: false,
+      aiUsed: false,
+      aiSkipped: true,
+      aiError: null,
+    };
+  }
 
   if (!process.env.GEMINI_API_KEY) {
     return {
       terms: fallbackTerms,
+      aiRequested: true,
       aiUsed: false,
+      aiSkipped: false,
       aiError: "GEMINI_API_KEY não configurada.",
     };
   }
@@ -65,7 +86,9 @@ async function createSmartSearchTerms(query) {
 
     return {
       terms: removeDuplicatedStrings(mergedTerms).slice(0, MAX_AI_TERMS),
+      aiRequested: true,
       aiUsed: aiTerms.length > 0,
+      aiSkipped: false,
       aiError: null,
     };
   } catch (error) {
@@ -73,8 +96,10 @@ async function createSmartSearchTerms(query) {
 
     return {
       terms: fallbackTerms,
+      aiRequested: true,
       aiUsed: false,
-      aiError: error.message || "Erro desconhecido na IA Gemini.",
+      aiSkipped: false,
+      aiError: getFriendlyAiError(error),
     };
   }
 }
@@ -165,6 +190,7 @@ Entrada do usuário:
 
   if (!response.ok) {
     const errorText = await response.text();
+
     throw new Error(
       `Falha ao chamar Gemini: ${response.status} - ${errorText}`,
     );
@@ -177,7 +203,7 @@ Entrada do usuário:
     return [];
   }
 
-  const parsed = JSON.parse(content);
+  const parsed = JSON.parse(stripJsonMarkdown(content));
 
   if (!Array.isArray(parsed.terms)) {
     return [];
@@ -200,6 +226,14 @@ function extractGeminiText(data) {
   }
 
   return "";
+}
+
+function stripJsonMarkdown(text) {
+  return String(text)
+    .replace(/^```json/i, "")
+    .replace(/^```/i, "")
+    .replace(/```$/i, "")
+    .trim();
 }
 
 /* =========================
@@ -257,7 +291,9 @@ async function searchMultipleTermsOnDeezer(terms) {
 }
 
 async function searchDeezer(term) {
-  const url = `${DEEZER_API_URL}?q=${encodeURIComponent(term)}&limit=${DEEZER_LIMIT}`;
+  const url = `${DEEZER_API_URL}?q=${encodeURIComponent(
+    term,
+  )}&limit=${DEEZER_LIMIT}`;
 
   const response = await fetch(url);
 
@@ -449,6 +485,28 @@ function levenshtein(textA, textB) {
 /* =========================
    Utilidades
 ========================= */
+
+function parseUseAi(value) {
+  if (value === undefined || value === null) {
+    return true;
+  }
+
+  return String(value).toLowerCase() !== "false";
+}
+
+function getFriendlyAiError(error) {
+  const message = String(error?.message || "");
+
+  if (
+    message.includes("RESOURCE_EXHAUSTED") ||
+    message.toLowerCase().includes("quota") ||
+    message.includes("429")
+  ) {
+    return "Limite da IA atingido. Usando busca simples.";
+  }
+
+  return message || "Erro desconhecido na IA.";
+}
 
 function normalizeText(text) {
   return String(text)

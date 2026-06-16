@@ -9,6 +9,8 @@ const elements = {
   recorderVisual: document.getElementById("recorderVisual"),
   resultsContainer: document.getElementById("recordResults"),
   modeHint: document.getElementById("modeHint"),
+  speechPanel: document.getElementById("speechPanel"),
+  speechTranscript: document.getElementById("speechTranscript"),
   modeInputs: document.querySelectorAll('input[name="recordMode"]'),
   modeCards: document.querySelectorAll(".mode-card"),
   tipOneTitle: document.getElementById("tipOneTitle"),
@@ -19,29 +21,33 @@ const elements = {
   tipThreeText: document.getElementById("tipThreeText"),
 };
 
+const SPEECH_RECOGNITION_LANGUAGE = "en-US";
+
 const RECORDING_MODES = {
   speech: {
     label: "Falar o que lembra",
-    minSeconds: 2,
+    minSeconds: 1,
     maxSeconds: 8,
     hint: 'Fale algo como "bad michael jackson", "smooth criminal" ou um trecho da letra.',
-    startStatus: "Gravando... fale o nome, artista ou trecho que você lembra.",
-    readyStatus: "Gravando... você já pode parar. Fale só o essencial.",
-    finishedStatus: "Gravação finalizada. Você pode ouvir antes de analisar.",
+    startButtonText: "Começar a ouvir",
+    resetButtonText: "Limpar",
+    analyzeButtonText: "Buscar música",
+    startStatus: "Ouvindo... fale o nome, artista ou trecho que você lembra.",
+    readyStatus: "Ouvindo... você já pode parar quando terminar de falar.",
+    finishedStatus: "Pronto. Confira o texto entendido e busque a música.",
     autoFinishedStatus:
-      "Gravação finalizada automaticamente. Você pode ouvir antes de analisar.",
-    shortStatus: "Fale por pelo menos 2 segundos para analisarmos melhor.",
-    analyzingStatus: "Interpretando sua fala e buscando músicas parecidas...",
+      "Parei de ouvir automaticamente. Confira o texto antes de buscar.",
+    shortStatus: "Fale por pelo menos 1 segundo para analisarmos melhor.",
+    analyzingStatus: "Buscando músicas parecidas...",
     tips: {
       oneTitle: "Fale de forma simples",
       oneText:
         "Diga o nome da música, artista ou um pedaço da letra. Não precisa cantar perfeito.",
-      twoTitle: "Evite frases longas",
-      twoText:
-        "Algo curto como “bad michael jackson” funciona melhor que uma explicação grande.",
-      threeTitle: "Grave de 2 a 8 segundos",
+      twoTitle: "Corrija se precisar",
+      twoText: "Se o navegador entender errado, edite o texto antes de buscar.",
+      threeTitle: "IA só se você pedir",
       threeText:
-        "Para fala, uma gravação curta e clara costuma funcionar melhor.",
+        "Primeiro o CantaAI busca sem gastar IA. Depois você pode refinar se precisar.",
     },
   },
 
@@ -50,6 +56,9 @@ const RECORDING_MODES = {
     minSeconds: 10,
     maxSeconds: 15,
     hint: "Cantarole o refrão com “hmmm” ou “nanana”. Não fale o nome da música neste modo.",
+    startButtonText: "Começar gravação",
+    resetButtonText: "Regravar",
+    analyzeButtonText: "Analisar gravação",
     startStatus:
       "Gravando... cantarole a melodia principal, de preferência o refrão.",
     readyStatus:
@@ -79,6 +88,9 @@ const state = {
   mode: "speech",
   mediaStream: null,
   mediaRecorder: null,
+  speechRecognition: null,
+  speechFinalText: "",
+  speechInterimText: "",
   audioChunks: [],
   audioBlob: null,
   audioUrl: null,
@@ -86,8 +98,9 @@ const state = {
   maxRecordTimeout: null,
   startedAt: null,
   recordedDurationSeconds: 0,
-  isRecording: false,
+  isCapturing: false,
   isAnalyzing: false,
+  stopReason: "manual",
 };
 
 /* =========================
@@ -96,6 +109,14 @@ const state = {
 
 function getModeConfig() {
   return RECORDING_MODES[state.mode];
+}
+
+function isSpeechMode() {
+  return state.mode === "speech";
+}
+
+function isHummingMode() {
+  return state.mode === "humming";
 }
 
 function setStatus(message) {
@@ -144,7 +165,9 @@ function startTimer() {
     const remainingSeconds = Math.max(maxSeconds - elapsedSeconds, 0);
 
     if (elapsedSeconds < minSeconds) {
-      setStatus(`Gravando... continue por pelo menos ${minSeconds} segundos.`);
+      setStatus(
+        `${isSpeechMode() ? "Ouvindo" : "Gravando"}... continue por pelo menos ${minSeconds} segundo(s).`,
+      );
       return;
     }
 
@@ -169,40 +192,60 @@ function stopTimer() {
   state.startedAt = null;
 }
 
-function setRecordingUI(isRecording) {
-  state.isRecording = isRecording;
+function hasSpeechText() {
+  return elements.speechTranscript.value.trim().length >= 2;
+}
 
-  elements.startButton.disabled = isRecording || state.isAnalyzing;
-  elements.stopButton.disabled = !isRecording || state.isAnalyzing;
+function hasAudioReady() {
+  return Boolean(state.audioBlob);
+}
+
+function hasAnalyzableContent() {
+  if (isSpeechMode()) {
+    return hasSpeechText();
+  }
+
+  return hasAudioReady();
+}
+
+function updateButtons() {
+  const config = getModeConfig();
+  const canReset = isSpeechMode()
+    ? elements.speechTranscript.value.trim().length > 0
+    : hasAudioReady();
+
+  elements.startButton.textContent = config.startButtonText;
+  elements.resetButton.textContent = config.resetButtonText;
+  elements.analyzeButton.textContent = state.isAnalyzing
+    ? "Analisando..."
+    : config.analyzeButtonText;
+
+  elements.startButton.disabled = state.isCapturing || state.isAnalyzing;
+  elements.stopButton.disabled = !state.isCapturing || state.isAnalyzing;
   elements.resetButton.disabled =
-    isRecording || !state.audioBlob || state.isAnalyzing;
+    state.isCapturing || state.isAnalyzing || !canReset;
   elements.analyzeButton.disabled =
-    isRecording || !state.audioBlob || state.isAnalyzing;
+    state.isCapturing || state.isAnalyzing || !hasAnalyzableContent();
 
   elements.modeInputs.forEach((input) => {
-    input.disabled = isRecording || state.isAnalyzing;
+    input.disabled = state.isCapturing || state.isAnalyzing;
   });
 
-  elements.recorderVisual.classList.toggle("is-recording", isRecording);
+  elements.speechTranscript.disabled =
+    state.isAnalyzing || state.isCapturing || !isSpeechMode();
+}
+
+function setCapturingUI(isCapturing) {
+  state.isCapturing = isCapturing;
+
+  elements.recorderVisual.classList.toggle("is-recording", isCapturing);
+
+  updateButtons();
 }
 
 function setAnalyzingUI(isAnalyzing) {
   state.isAnalyzing = isAnalyzing;
-
-  elements.startButton.disabled = isAnalyzing || state.isRecording;
-  elements.stopButton.disabled = isAnalyzing || !state.isRecording;
-  elements.resetButton.disabled =
-    isAnalyzing || state.isRecording || !state.audioBlob;
-  elements.analyzeButton.disabled =
-    isAnalyzing || state.isRecording || !state.audioBlob;
-
-  elements.modeInputs.forEach((input) => {
-    input.disabled = isAnalyzing || state.isRecording;
-  });
-
-  elements.analyzeButton.textContent = isAnalyzing
-    ? "Analisando..."
-    : "Analisar gravação";
+  updateButtons();
 }
 
 function clearAudioUrl() {
@@ -220,7 +263,6 @@ function clearResults() {
 
 function resetAudioState() {
   clearAudioUrl();
-  clearResults();
 
   state.audioChunks = [];
   state.audioBlob = null;
@@ -229,6 +271,31 @@ function resetAudioState() {
   elements.audioPreview.src = "";
   elements.audioPreview.hidden = true;
   elements.recordTimer.textContent = "00:00";
+}
+
+function resetSpeechState() {
+  state.speechFinalText = "";
+  state.speechInterimText = "";
+  elements.speechTranscript.value = "";
+}
+
+function resetCurrentModeState() {
+  clearResults();
+  stopTimer();
+
+  if (state.speechRecognition) {
+    try {
+      state.speechRecognition.abort();
+    } catch (error) {
+      console.log("Speech abort ignorado:", error);
+    }
+  }
+
+  stopMicrophoneTracks();
+  resetAudioState();
+  resetSpeechState();
+  setCapturingUI(false);
+  updateButtons();
 }
 
 function createElement(tag, className, textContent) {
@@ -277,7 +344,7 @@ function getFriendlyBackendError(message) {
     text.includes("rate limit") ||
     text.includes("429")
   ) {
-    return "O limite diário da IA foi atingido. Tente novamente mais tarde ou use o modo Cantarolar.";
+    return "Estamos com muitas buscas agora. Tente novamente mais tarde.";
   }
 
   return (
@@ -326,6 +393,9 @@ function updateModeUI() {
 
   elements.modeHint.textContent = config.hint;
 
+  elements.speechPanel.hidden = !isSpeechMode();
+  elements.audioPreview.hidden = isSpeechMode() || !state.audioBlob;
+
   elements.tipOneTitle.textContent = config.tips.oneTitle;
   elements.tipOneText.textContent = config.tips.oneText;
   elements.tipTwoTitle.textContent = config.tips.twoTitle;
@@ -333,17 +403,19 @@ function updateModeUI() {
   elements.tipThreeTitle.textContent = config.tips.threeTitle;
   elements.tipThreeText.textContent = config.tips.threeText;
 
-  setStatus("Clique em começar e permita o uso do microfone.");
+  elements.recordTimer.textContent = "00:00";
+
+  setStatus("Clique em começar.");
+  updateButtons();
 }
 
 function changeMode(mode) {
-  if (!RECORDING_MODES[mode] || state.isRecording || state.isAnalyzing) {
+  if (!RECORDING_MODES[mode] || state.isCapturing || state.isAnalyzing) {
     return;
   }
 
   state.mode = mode;
-  resetAudioState();
-  setRecordingUI(false);
+  resetCurrentModeState();
   updateModeUI();
 }
 
@@ -444,7 +516,184 @@ function createPreviewPlayer(previewUrl) {
 }
 
 /* =========================
-   Microfone
+   Speech Recognition
+========================= */
+
+function getSpeechRecognitionConstructor() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function isSpeechRecognitionSupported() {
+  return Boolean(getSpeechRecognitionConstructor());
+}
+
+function createSpeechRecognition() {
+  const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+
+  if (!SpeechRecognitionConstructor) {
+    return null;
+  }
+
+  const recognition = new SpeechRecognitionConstructor();
+
+  recognition.lang = SPEECH_RECOGNITION_LANGUAGE;
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  return recognition;
+}
+
+function updateSpeechTranscriptText() {
+  const text = `${state.speechFinalText} ${state.speechInterimText}`
+    .replace(/\s+/g, " ")
+    .trim();
+
+  elements.speechTranscript.value = text;
+  updateButtons();
+}
+
+function startSpeechCapture() {
+  const config = getModeConfig();
+
+  clearResults();
+  resetSpeechState();
+  resetAudioState();
+
+  if (!isSpeechRecognitionSupported()) {
+    setStatus(
+      "Seu navegador não suporta reconhecimento de fala. Digite o que você lembra no campo acima.",
+    );
+
+    elements.speechTranscript.disabled = false;
+    elements.speechTranscript.focus();
+    updateButtons();
+
+    return;
+  }
+
+  const recognition = createSpeechRecognition();
+
+  state.speechRecognition = recognition;
+  state.stopReason = "manual";
+
+  recognition.addEventListener("result", handleSpeechResult);
+  recognition.addEventListener("error", handleSpeechError);
+  recognition.addEventListener("end", handleSpeechEnd);
+
+  try {
+    recognition.start();
+
+    startTimer();
+    setCapturingUI(true);
+
+    state.maxRecordTimeout = setTimeout(() => {
+      stopSpeechCapture("max-time");
+    }, config.maxSeconds * 1000);
+
+    setStatus(`${config.startStatus} Tempo máximo: ${config.maxSeconds}s.`);
+  } catch (error) {
+    console.log("Erro ao iniciar fala:", error);
+
+    stopTimer();
+    setCapturingUI(false);
+    setStatus(
+      "Não foi possível iniciar o reconhecimento de fala. Tente digitar o que você lembra.",
+    );
+  }
+}
+
+function stopSpeechCapture(reason = "manual") {
+  if (!state.speechRecognition) {
+    return;
+  }
+
+  state.stopReason = reason;
+  stopTimer();
+
+  try {
+    state.speechRecognition.stop();
+  } catch (error) {
+    console.log("Speech stop ignorado:", error);
+    handleSpeechEnd();
+  }
+}
+
+function handleSpeechResult(event) {
+  let finalText = "";
+  let interimText = "";
+
+  for (let index = event.resultIndex; index < event.results.length; index++) {
+    const result = event.results[index];
+    const transcript = result[0]?.transcript || "";
+
+    if (result.isFinal) {
+      finalText += ` ${transcript}`;
+    } else {
+      interimText += ` ${transcript}`;
+    }
+  }
+
+  if (finalText.trim()) {
+    state.speechFinalText = `${state.speechFinalText} ${finalText}`
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  state.speechInterimText = interimText.trim();
+
+  updateSpeechTranscriptText();
+
+  if (hasSpeechText()) {
+    setStatus(
+      "Entendi algo. Você pode parar, corrigir o texto ou buscar direto.",
+    );
+  }
+}
+
+function handleSpeechError(event) {
+  console.log("Erro SpeechRecognition:", event.error);
+
+  const messages = {
+    "no-speech": "Não ouvi nenhuma fala. Tente falar mais perto do microfone.",
+    "audio-capture": "Não consegui acessar o microfone.",
+    "not-allowed": "Permissão negada. Libere o microfone no navegador.",
+    network: "Falha de rede no reconhecimento de fala. Tente novamente.",
+  };
+
+  setStatus(
+    messages[event.error] ||
+      "Não consegui entender a fala. Você pode digitar o que lembra.",
+  );
+}
+
+function handleSpeechEnd() {
+  const config = getModeConfig();
+
+  stopTimer();
+  setCapturingUI(false);
+
+  state.speechRecognition = null;
+  state.speechInterimText = "";
+  updateSpeechTranscriptText();
+
+  if (hasSpeechText()) {
+    setStatus(
+      state.stopReason === "max-time"
+        ? config.autoFinishedStatus
+        : config.finishedStatus,
+    );
+
+    return;
+  }
+
+  setStatus(
+    "Não entendi nenhuma fala. Tente novamente ou digite o que lembra.",
+  );
+}
+
+/* =========================
+   Microfone / áudio
 ========================= */
 
 async function requestMicrophone() {
@@ -488,14 +737,16 @@ function stopMicrophoneTracks() {
 }
 
 /* =========================
-   Recorder
+   Humming Recorder
 ========================= */
 
-async function startRecording() {
+async function startHummingRecording() {
   const config = getModeConfig();
 
   try {
+    clearResults();
     resetAudioState();
+    resetSpeechState();
 
     state.mediaStream = await requestMicrophone();
     state.mediaRecorder = createMediaRecorder(state.mediaStream);
@@ -506,10 +757,10 @@ async function startRecording() {
     state.mediaRecorder.start();
 
     startTimer();
-    setRecordingUI(true);
+    setCapturingUI(true);
 
     state.maxRecordTimeout = setTimeout(() => {
-      stopRecording({
+      stopHummingRecording({
         force: true,
         reason: "max-time",
       });
@@ -525,11 +776,11 @@ async function startRecording() {
     stopMicrophoneTracks();
 
     setStatus(getFriendlyMicrophoneError(error));
-    setRecordingUI(false);
+    setCapturingUI(false);
   }
 }
 
-function stopRecording(options = {}) {
+function stopHummingRecording(options = {}) {
   const { force = false, reason = "manual" } = options;
   const config = getModeConfig();
 
@@ -550,7 +801,7 @@ function stopRecording(options = {}) {
   stopTimer();
 
   state.mediaRecorder.stop();
-  setRecordingUI(false);
+  setCapturingUI(false);
 
   if (reason === "max-time") {
     setStatus(config.autoFinishedStatus);
@@ -573,7 +824,7 @@ function handleRecordingStop() {
   if (state.recordedDurationSeconds < config.minSeconds) {
     resetAudioState();
     stopMicrophoneTracks();
-    setRecordingUI(false);
+    setCapturingUI(false);
 
     setStatus(config.shortStatus);
 
@@ -592,38 +843,73 @@ function handleRecordingStop() {
 
   stopMicrophoneTracks();
 
-  elements.resetButton.disabled = false;
-  elements.analyzeButton.disabled = false;
+  updateButtons();
 }
 
-async function resetRecording() {
-  if (state.isRecording || state.isAnalyzing) {
+/* =========================
+   Ações principais
+========================= */
+
+function startCapture() {
+  if (isSpeechMode()) {
+    startSpeechCapture();
+    return;
+  }
+
+  startHummingRecording();
+}
+
+function stopCapture() {
+  if (isSpeechMode()) {
+    stopSpeechCapture("manual");
+    return;
+  }
+
+  stopHummingRecording();
+}
+
+async function resetCapture() {
+  if (state.isCapturing || state.isAnalyzing) {
+    return;
+  }
+
+  if (isSpeechMode()) {
+    resetSpeechState();
+    clearResults();
+    elements.recordTimer.textContent = "00:00";
+    setStatus("Campo limpo. Fale novamente ou digite o que lembra.");
+    updateButtons();
+    elements.speechTranscript.focus();
     return;
   }
 
   resetAudioState();
-  setRecordingUI(false);
+  setCapturingUI(false);
   setStatus("Preparando nova gravação...");
 
-  await startRecording();
+  await startHummingRecording();
 }
 
 /* =========================
-   Busca textual fallback
+   Busca textual
 ========================= */
 
-async function searchByText(query) {
-  const url = `/.netlify/functions/search-music?query=${encodeURIComponent(
-    query,
-  )}`;
+async function searchByText(query, options = {}) {
+  const { useAi = false } = options;
 
-  const response = await fetch(url);
+  const params = new URLSearchParams({
+    query,
+    useAi: String(useAi),
+  });
+
+  const response = await fetch(`/.netlify/functions/search-music?${params}`);
+  const data = await readResponseJson(response);
 
   if (!response.ok) {
-    throw new Error("Erro ao buscar músicas por texto.");
+    throw new Error(
+      data.userMessage || data.error || "Erro ao buscar músicas por texto.",
+    );
   }
-
-  const data = await response.json();
 
   return data.results || [];
 }
@@ -635,6 +921,11 @@ async function searchByText(query) {
 function renderInfoCard(title, description, action = null) {
   clearResults();
 
+  const card = createInfoCard(title, description, action);
+  elements.resultsContainer.appendChild(card);
+}
+
+function createInfoCard(title, description, action = null) {
   const card = createElement("article", "result-card result-card--info");
   const content = createElement("div", "result-card__content");
 
@@ -655,7 +946,8 @@ function renderInfoCard(title, description, action = null) {
   }
 
   card.appendChild(content);
-  elements.resultsContainer.appendChild(card);
+
+  return card;
 }
 
 function createExternalLink(label, url) {
@@ -781,11 +1073,7 @@ function createTextMusicCard(music, isBestGuess = false) {
   const content = createElement("div", "result-card__content");
 
   if (isBestGuess) {
-    const badge = createElement(
-      "span",
-      "result-badge",
-      "Melhor palpite por fala",
-    );
+    const badge = createElement("span", "result-badge", "Melhor palpite");
     content.appendChild(badge);
   }
 
@@ -818,6 +1106,21 @@ function createTextMusicCard(music, isBestGuess = false) {
   return card;
 }
 
+function createAiRefinementCard(query) {
+  return createInfoCard(
+    "Quer uma busca mais precisa com IA?",
+    "A primeira busca não usa IA. Se o resultado não ficou bom, você pode pedir para o CantaAI refinar usando Gemini.",
+    {
+      label: "Refinar com IA",
+      onClick: () =>
+        runSpeechSearch({
+          query,
+          useAi: true,
+        }),
+    },
+  );
+}
+
 function renderAcrResults(matches, confidence) {
   clearResults();
 
@@ -840,59 +1143,42 @@ function renderAcrResults(matches, confidence) {
   });
 }
 
-function renderTextResults(results, query) {
+function renderTextResults(results, query, options = {}) {
+  const { canRefineWithAi = false } = options;
+
   clearResults();
 
   const title = createElement(
     "h2",
     "result-section-title",
-    `🔎 Entendi algo parecido com: "${query}"`,
+    `🔎 Busca: "${query}"`,
   );
 
   elements.resultsContainer.appendChild(title);
 
   if (!results.length) {
-    renderInfoCard(
-      "Não encontramos resultados por fala",
-      "A gravação foi entendida, mas não encontramos músicas parecidas.",
+    elements.resultsContainer.appendChild(
+      createInfoCard(
+        "Não encontramos resultados",
+        "Tente corrigir o texto, buscar com menos palavras ou refinar com IA.",
+      ),
     );
-    return;
+  } else {
+    results.slice(0, 8).forEach((music, index) => {
+      elements.resultsContainer.appendChild(
+        createTextMusicCard(music, index === 0),
+      );
+    });
   }
 
-  results.slice(0, 8).forEach((music, index) => {
-    elements.resultsContainer.appendChild(
-      createTextMusicCard(music, index === 0),
-    );
-  });
+  if (canRefineWithAi) {
+    elements.resultsContainer.appendChild(createAiRefinementCard(query));
+  }
 }
 
-async function renderRecognitionResult(data) {
-  const mode = data.mode || state.mode;
+function renderRecognitionResult(data) {
   const matches = Array.isArray(data.matches) ? data.matches : [];
   const confidence = data.confidence || "none";
-  const speechQuery = data.speech?.query || "";
-
-  if (mode === "speech") {
-    if (!speechQuery) {
-      setStatus("Não consegui entender sua fala com segurança.");
-
-      renderInfoCard(
-        "Não entendi o que foi falado",
-        "Tente falar o nome da música ou artista mais perto do microfone.",
-      );
-
-      return;
-    }
-
-    setStatus(`Entendi: "${speechQuery}". Buscando músicas parecidas...`);
-
-    const textResults = await searchByText(speechQuery);
-
-    setStatus(`Busca concluída para: "${speechQuery}".`);
-    renderTextResults(textResults, speechQuery);
-
-    return;
-  }
 
   if (confidence === "high" || confidence === "medium") {
     setStatus("Encontramos possíveis músicas pela melodia.");
@@ -922,10 +1208,60 @@ async function renderRecognitionResult(data) {
 }
 
 /* =========================
-   Análise com backend
+   Análise
 ========================= */
 
-async function analyzeRecording() {
+async function runSpeechSearch({ query, useAi = false }) {
+  const searchQuery = String(query || "").trim();
+
+  if (!searchQuery) {
+    setStatus("Fale ou digite algo antes de buscar.");
+    return;
+  }
+
+  setAnalyzingUI(true);
+  clearResults();
+
+  setStatus(
+    useAi
+      ? `Refinando com IA: "${searchQuery}"...`
+      : `Buscando músicas parecidas com: "${searchQuery}"...`,
+  );
+
+  try {
+    const results = await searchByText(searchQuery, { useAi });
+
+    setStatus(
+      useAi
+        ? `Busca refinada com IA para: "${searchQuery}".`
+        : `Busca concluída sem IA para: "${searchQuery}".`,
+    );
+
+    renderTextResults(results, searchQuery, {
+      canRefineWithAi: !useAi,
+    });
+  } catch (error) {
+    console.log(error);
+
+    const friendlyMessage = getFriendlyBackendError(error.message);
+
+    setStatus(friendlyMessage);
+    renderInfoCard("Não foi possível buscar agora", friendlyMessage);
+  } finally {
+    setAnalyzingUI(false);
+  }
+}
+
+function analyzeSpeech() {
+  const query = elements.speechTranscript.value.trim();
+
+  runSpeechSearch({
+    query,
+    useAi: false,
+  });
+}
+
+async function analyzeHumming() {
   const config = getModeConfig();
 
   if (!state.audioBlob) {
@@ -953,7 +1289,7 @@ async function analyzeRecording() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        mode: state.mode,
+        mode: "humming",
         audioBase64,
         mimeType: state.audioBlob.type || "audio/webm",
       }),
@@ -970,7 +1306,7 @@ async function analyzeRecording() {
       throw new Error(getFriendlyBackendError(message));
     }
 
-    await renderRecognitionResult(data);
+    renderRecognitionResult(data);
 
     console.log("Resultado do reconhecimento:", data);
   } catch (error) {
@@ -979,11 +1315,19 @@ async function analyzeRecording() {
     const friendlyMessage = getFriendlyBackendError(error.message);
 
     setStatus(friendlyMessage);
-
     renderInfoCard("Não foi possível analisar agora", friendlyMessage);
   } finally {
     setAnalyzingUI(false);
   }
+}
+
+function analyzeCurrentMode() {
+  if (isSpeechMode()) {
+    analyzeSpeech();
+    return;
+  }
+
+  analyzeHumming();
 }
 
 /* =========================
@@ -996,15 +1340,29 @@ elements.modeInputs.forEach((input) => {
   });
 });
 
-elements.startButton.addEventListener("click", startRecording);
-elements.stopButton.addEventListener("click", () => stopRecording());
-elements.resetButton.addEventListener("click", resetRecording);
-elements.analyzeButton.addEventListener("click", analyzeRecording);
+elements.speechTranscript.addEventListener("input", () => {
+  state.speechFinalText = elements.speechTranscript.value.trim();
+  state.speechInterimText = "";
+  updateButtons();
+});
+
+elements.startButton.addEventListener("click", startCapture);
+elements.stopButton.addEventListener("click", stopCapture);
+elements.resetButton.addEventListener("click", resetCapture);
+elements.analyzeButton.addEventListener("click", analyzeCurrentMode);
 
 window.addEventListener("beforeunload", () => {
   stopTimer();
   stopMicrophoneTracks();
   clearAudioUrl();
+
+  if (state.speechRecognition) {
+    try {
+      state.speechRecognition.abort();
+    } catch (error) {
+      console.log("Speech abort ignorado:", error);
+    }
+  }
 });
 
 updateModeUI();
