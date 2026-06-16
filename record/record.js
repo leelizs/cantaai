@@ -199,6 +199,79 @@
       .slice(0, MAX_QUERY_LENGTH);
   }
 
+  function cleanSpeechTranscript(value) {
+    const text = normalizeText(value);
+
+    if (!text) {
+      return "";
+    }
+
+    return removeImmediateRepeatedPhrases(text);
+  }
+
+  function normalizeSpeechWordForCompare(word) {
+    return String(word || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\p{L}\p{N}'-]/gu, "");
+  }
+
+  function areSameWordBlocks(words, firstStart, secondStart, size) {
+    for (let offset = 0; offset < size; offset += 1) {
+      const firstWord = normalizeSpeechWordForCompare(
+        words[firstStart + offset],
+      );
+      const secondWord = normalizeSpeechWordForCompare(
+        words[secondStart + offset],
+      );
+
+      if (!firstWord || firstWord !== secondWord) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function removeImmediateRepeatedPhrases(value) {
+    const words = normalizeText(value).split(" ").filter(Boolean);
+    const maxPhraseSize = 8;
+
+    if (words.length <= 1) {
+      return words.join(" ");
+    }
+
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+
+      for (
+        let size = Math.min(maxPhraseSize, Math.floor(words.length / 2));
+        size >= 1;
+        size -= 1
+      ) {
+        for (let index = 0; index + size * 2 <= words.length; index += 1) {
+          const firstStart = index;
+          const secondStart = index + size;
+
+          if (areSameWordBlocks(words, firstStart, secondStart, size)) {
+            words.splice(secondStart, size);
+            changed = true;
+            break;
+          }
+        }
+
+        if (changed) {
+          break;
+        }
+      }
+    }
+
+    return words.join(" ");
+  }
+
   function setStatus(message, type = "info") {
     const { statusText } = app.elements;
 
@@ -769,7 +842,7 @@
   }
 
   function updateSpeechTranscriptText() {
-    const text = normalizeText(
+    const text = cleanSpeechTranscript(
       `${app.state.speechFinalText} ${app.state.speechInterimText}`,
     );
 
@@ -855,31 +928,26 @@
   }
 
   function handleSpeechResult(event) {
-    let finalText = "";
-    let interimText = "";
+    const finalParts = [];
+    const interimParts = [];
 
-    for (
-      let index = event.resultIndex;
-      index < event.results.length;
-      index += 1
-    ) {
+    for (let index = 0; index < event.results.length; index += 1) {
       const result = event.results[index];
       const transcript = result[0]?.transcript || "";
 
+      if (!transcript.trim()) {
+        continue;
+      }
+
       if (result.isFinal) {
-        finalText += ` ${transcript}`;
+        finalParts.push(transcript);
       } else {
-        interimText += ` ${transcript}`;
+        interimParts.push(transcript);
       }
     }
 
-    if (finalText.trim()) {
-      app.state.speechFinalText = normalizeText(
-        `${app.state.speechFinalText} ${finalText}`,
-      );
-    }
-
-    app.state.speechInterimText = normalizeText(interimText);
+    app.state.speechFinalText = cleanSpeechTranscript(finalParts.join(" "));
+    app.state.speechInterimText = cleanSpeechTranscript(interimParts.join(" "));
 
     updateSpeechTranscriptText();
 
@@ -1773,9 +1841,15 @@
     });
 
     elements.speechTranscript.addEventListener("input", () => {
-      const transcript = normalizeText(elements.speechTranscript.value);
+      const transcript = elements.speechTranscript.value
+        .replace(/\s+/g, " ")
+        .slice(0, MAX_QUERY_LENGTH);
 
-      app.state.speechFinalText = transcript;
+      if (elements.speechTranscript.value !== transcript) {
+        elements.speechTranscript.value = transcript;
+      }
+
+      app.state.speechFinalText = transcript.trim();
       app.state.speechInterimText = "";
       updateButtons();
     });
