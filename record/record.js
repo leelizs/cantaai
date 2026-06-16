@@ -22,15 +22,15 @@ const elements = {
 const RECORDING_MODES = {
   speech: {
     label: "Falar o que lembra",
-    minSeconds: 3,
-    maxSeconds: 10,
+    minSeconds: 2,
+    maxSeconds: 8,
     hint: 'Fale algo como "bad michael jackson", "smooth criminal" ou um trecho da letra.',
     startStatus: "Gravando... fale o nome, artista ou trecho que você lembra.",
     readyStatus: "Gravando... você já pode parar. Fale só o essencial.",
     finishedStatus: "Gravação finalizada. Você pode ouvir antes de analisar.",
     autoFinishedStatus:
       "Gravação finalizada automaticamente. Você pode ouvir antes de analisar.",
-    shortStatus: "Fale por pelo menos 3 segundos para analisarmos melhor.",
+    shortStatus: "Fale por pelo menos 2 segundos para analisarmos melhor.",
     analyzingStatus: "Interpretando sua fala e buscando músicas parecidas...",
     tips: {
       oneTitle: "Fale de forma simples",
@@ -39,7 +39,7 @@ const RECORDING_MODES = {
       twoTitle: "Evite frases longas",
       twoText:
         "Algo curto como “bad michael jackson” funciona melhor que uma explicação grande.",
-      threeTitle: "Grave de 3 a 10 segundos",
+      threeTitle: "Grave de 2 a 8 segundos",
       threeText:
         "Para fala, uma gravação curta e clara costuma funcionar melhor.",
     },
@@ -266,6 +266,32 @@ function getFriendlyMicrophoneError(error) {
   }
 
   return "Não foi possível acessar o microfone. Verifique as permissões do navegador.";
+}
+
+function getFriendlyBackendError(message) {
+  const text = String(message || "").toLowerCase();
+
+  if (
+    text.includes("quota") ||
+    text.includes("resource_exhausted") ||
+    text.includes("rate limit") ||
+    text.includes("429")
+  ) {
+    return "O limite diário da IA foi atingido. Tente novamente mais tarde ou use o modo Cantarolar.";
+  }
+
+  return (
+    message ||
+    "Não conseguimos analisar essa gravação agora. Tente novamente em alguns segundos."
+  );
+}
+
+async function readResponseJson(response) {
+  try {
+    return await response.json();
+  } catch (error) {
+    return {};
+  }
 }
 
 function blobToBase64(blob) {
@@ -933,10 +959,15 @@ async function analyzeRecording() {
       }),
     });
 
-    const data = await response.json();
+    const data = await readResponseJson(response);
 
     if (!response.ok || !data.success) {
-      throw new Error(data.error || "Não foi possível reconhecer o áudio.");
+      const message =
+        data.userMessage ||
+        data.error ||
+        "Não foi possível reconhecer o áudio.";
+
+      throw new Error(getFriendlyBackendError(message));
     }
 
     await renderRecognitionResult(data);
@@ -945,12 +976,11 @@ async function analyzeRecording() {
   } catch (error) {
     console.log(error);
 
-    setStatus(error.message || "Erro ao analisar gravação.");
+    const friendlyMessage = getFriendlyBackendError(error.message);
 
-    renderInfoCard(
-      "Algo deu errado",
-      "Não conseguimos analisar essa gravação agora. Tente novamente em alguns segundos.",
-    );
+    setStatus(friendlyMessage);
+
+    renderInfoCard("Não foi possível analisar agora", friendlyMessage);
   } finally {
     setAnalyzingUI(false);
   }

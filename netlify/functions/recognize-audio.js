@@ -25,6 +25,16 @@ const SCORE_LIMITS = {
   MEDIUM: 50,
 };
 
+class PublicError extends Error {
+  constructor({ statusCode = 500, errorType = "unknown", userMessage }) {
+    super(userMessage);
+
+    this.statusCode = statusCode;
+    this.errorType = errorType;
+    this.userMessage = userMessage;
+  }
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") {
     return createResponse(200, {});
@@ -32,7 +42,10 @@ exports.handler = async function (event) {
 
   if (event.httpMethod !== "POST") {
     return createResponse(405, {
+      success: false,
       error: "Método não permitido.",
+      userMessage: "Essa ação não é permitida.",
+      errorType: "method_not_allowed",
     });
   }
 
@@ -44,23 +57,29 @@ exports.handler = async function (event) {
     const mimeType = body.mimeType || "audio/webm";
 
     if (!audioBase64) {
-      return createResponse(400, {
-        error: "Nenhum áudio foi enviado.",
+      throw new PublicError({
+        statusCode: 400,
+        errorType: "missing_audio",
+        userMessage: "Nenhum áudio foi enviado.",
       });
     }
 
     const audioBuffer = base64ToBuffer(audioBase64);
 
     if (audioBuffer.length === 0) {
-      return createResponse(400, {
-        error: "O áudio enviado está vazio.",
+      throw new PublicError({
+        statusCode: 400,
+        errorType: "empty_audio",
+        userMessage: "O áudio enviado está vazio.",
       });
     }
 
     if (audioBuffer.length > MAX_AUDIO_SIZE_BYTES) {
-      return createResponse(413, {
-        error:
-          "O áudio ficou grande demais. Grave um trecho menor, de até 15 segundos.",
+      throw new PublicError({
+        statusCode: 413,
+        errorType: "audio_too_large",
+        userMessage:
+          "O áudio ficou grande demais. Grave um trecho menor e tente novamente.",
       });
     }
 
@@ -109,9 +128,13 @@ exports.handler = async function (event) {
   } catch (error) {
     console.error("Erro no reconhecimento:", error);
 
-    return createResponse(500, {
+    const publicError = normalizePublicError(error);
+
+    return createResponse(publicError.statusCode, {
       success: false,
-      error: error.message || "Erro ao reconhecer áudio.",
+      error: publicError.userMessage,
+      userMessage: publicError.userMessage,
+      errorType: publicError.errorType,
     });
   }
 };
@@ -163,13 +186,23 @@ async function recognizeWithAcrCloud(audioBuffer, mimeType) {
   const responseText = await response.text();
 
   if (!response.ok) {
-    throw new Error(`Erro da ACRCloud: ${response.status} - ${responseText}`);
+    throw new PublicError({
+      statusCode: 502,
+      errorType: "acrcloud_error",
+      userMessage:
+        "Não foi possível consultar o reconhecimento por áudio agora. Tente novamente em alguns segundos.",
+    });
   }
 
   try {
     return JSON.parse(responseText);
   } catch (error) {
-    throw new Error("A ACRCloud retornou uma resposta inválida.");
+    throw new PublicError({
+      statusCode: 502,
+      errorType: "acrcloud_invalid_response",
+      userMessage:
+        "O reconhecimento por áudio retornou uma resposta inválida. Tente novamente.",
+    });
   }
 }
 
@@ -264,9 +297,26 @@ Retorne apenas JSON válido neste formato:
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
-      `Falha ao chamar Gemini: ${response.status} - ${errorText}`,
-    );
+
+    if (
+      response.status === 429 ||
+      errorText.includes("RESOURCE_EXHAUSTED") ||
+      errorText.toLowerCase().includes("quota")
+    ) {
+      throw new PublicError({
+        statusCode: 429,
+        errorType: "gemini_quota_exceeded",
+        userMessage:
+          "O limite diário da IA foi atingido. Tente novamente mais tarde ou use o modo Cantarolar.",
+      });
+    }
+
+    throw new PublicError({
+      statusCode: 502,
+      errorType: "gemini_error",
+      userMessage:
+        "A IA não conseguiu interpretar essa gravação agora. Tente novamente em alguns segundos.",
+    });
   }
 
   const data = await response.json();
@@ -277,18 +327,27 @@ Retorne apenas JSON válido neste formato:
       aiUsed: true,
       query: "",
       confidence: 0,
-      error: "Gemini não retornou texto.",
+      error: null,
     };
   }
 
-  const parsed = JSON.parse(stripJsonMarkdown(content));
+  try {
+    const parsed = JSON.parse(stripJsonMarkdown(content));
 
-  return {
-    aiUsed: true,
-    query: String(parsed.query || "").trim(),
-    confidence: Number(parsed.confidence || 0),
-    error: null,
-  };
+    return {
+      aiUsed: true,
+      query: String(parsed.query || "").trim(),
+      confidence: Number(parsed.confidence || 0),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      aiUsed: true,
+      query: "",
+      confidence: 0,
+      error: null,
+    };
+  }
 }
 
 function extractGeminiText(data) {
@@ -420,21 +479,56 @@ function validateAcrCloudEnvironmentVariables() {
     "ACRCLOUD_ACCESS_SECRET",
   ];
 
-  const missingVariables = requiredVariables.filter(
+  const hasMissingVariable = requiredVariables.some(
     (variableName) => !process.env[variableName],
   );
 
-  if (missingVariables.length > 0) {
-    throw new Error(
-      `Variáveis ausentes no Netlify: ${missingVariables.join(", ")}`,
-    );
+  if (hasMissingVariable) {
+    throw new PublicError({
+      statusCode: 500,
+      errorType: "acrcloud_not_configured",
+      userMessage:
+        "O reconhecimento por cantarolado ainda não está configurado corretamente.",
+    });
   }
 }
 
 function validateGeminiEnvironmentVariables() {
   if (!process.env.GEMINI_API_KEY) {
-    throw new Error("Variável ausente no Netlify: GEMINI_API_KEY");
+    throw new PublicError({
+      statusCode: 500,
+      errorType: "gemini_not_configured",
+      userMessage: "A busca por fala ainda não está configurada corretamente.",
+    });
   }
+}
+
+function normalizePublicError(error) {
+  if (error instanceof PublicError) {
+    return error;
+  }
+
+  const message = String(error?.message || "");
+
+  if (
+    message.includes("RESOURCE_EXHAUSTED") ||
+    message.toLowerCase().includes("quota") ||
+    message.includes("429")
+  ) {
+    return new PublicError({
+      statusCode: 429,
+      errorType: "quota_exceeded",
+      userMessage:
+        "O limite diário da IA foi atingido. Tente novamente mais tarde ou use o modo Cantarolar.",
+    });
+  }
+
+  return new PublicError({
+    statusCode: 500,
+    errorType: "unknown",
+    userMessage:
+      "Não conseguimos analisar essa gravação agora. Tente novamente em alguns segundos.",
+  });
 }
 
 function normalizeHost(host) {
