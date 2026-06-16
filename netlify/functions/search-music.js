@@ -1,7 +1,7 @@
 const DEEZER_API_URL = "https://api.deezer.com/search";
-const OPENAI_API_URL = "https://api.openai.com/v1/responses";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
-const MAX_AI_TERMS = 6;
+const MAX_AI_TERMS = 8;
 const DEEZER_LIMIT = 10;
 const MAX_RESULTS = 12;
 
@@ -15,18 +15,22 @@ exports.handler = async function (event) {
       });
     }
 
-    const searchTerms = await createSmartSearchTerms(query);
-    const deezerResults = await searchMultipleTermsOnDeezer(searchTerms);
+    const smartSearch = await createSmartSearchTerms(query);
+    const deezerResults = await searchMultipleTermsOnDeezer(smartSearch.terms);
     const uniqueResults = removeDuplicatedMusics(deezerResults);
-    const rankedResults = rankResults(query, searchTerms, uniqueResults);
+    const rankedResults = rankResults(query, smartSearch.terms, uniqueResults);
 
     return createResponse(200, {
       originalQuery: query,
-      searchTerms,
+      searchTerms: smartSearch.terms,
+      debug: {
+        aiUsed: smartSearch.aiUsed,
+        aiError: smartSearch.aiError,
+      },
       results: rankedResults.slice(0, MAX_RESULTS),
     });
   } catch (error) {
-    console.error(error);
+    console.error("Erro geral:", error);
 
     return createResponse(500, {
       error: "Erro ao buscar músicas.",
@@ -35,51 +39,96 @@ exports.handler = async function (event) {
 };
 
 /* =========================
-   IA: melhora a busca
+   IA: cria termos melhores
 ========================= */
 
 async function createSmartSearchTerms(query) {
   const fallbackTerms = createFallbackSearchTerms(query);
 
   if (!process.env.OPENAI_API_KEY) {
-    return fallbackTerms;
+    return {
+      terms: fallbackTerms,
+      aiUsed: false,
+      aiError: "OPENAI_API_KEY não configurada.",
+    };
   }
 
   try {
     const aiTerms = await generateSearchTermsWithAI(query);
-
     const mergedTerms = [...aiTerms, ...fallbackTerms];
 
-    return removeDuplicatedStrings(mergedTerms).slice(0, MAX_AI_TERMS);
+    return {
+      terms: removeDuplicatedStrings(mergedTerms).slice(0, MAX_AI_TERMS),
+      aiUsed: aiTerms.length > 0,
+      aiError: null,
+    };
   } catch (error) {
     console.error("Erro na IA:", error);
-    return fallbackTerms;
+
+    return {
+      terms: fallbackTerms,
+      aiUsed: false,
+      aiError: error.message || "Erro desconhecido na IA.",
+    };
   }
 }
 
 async function generateSearchTermsWithAI(query) {
-  const prompt = `
+  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+  const messages = [
+    {
+      role: "system",
+      content: `
 Você é uma IA especializada em busca musical.
 
-O usuário pode digitar nomes de músicas, artistas ou trechos de letra de forma errada, incompleta ou fonética.
+O usuário pode digitar:
+- nome de música errado;
+- artista errado;
+- trecho de letra errado;
+- palavras fonéticas;
+- uma mistura de artista + som aproximado.
 
-Sua tarefa é gerar até ${MAX_AI_TERMS} termos curtos de busca para APIs musicais como Deezer, Spotify, Last.fm e MusicBrainz.
+Sua tarefa é transformar a busca ruim em termos úteis para APIs musicais.
 
 Regras:
 - Retorne apenas JSON válido.
 - Não explique nada.
-- Não invente uma música específica se não houver indícios.
-- Corrija erros fonéticos prováveis.
-- Mantenha termos úteis para busca musical.
+- Não use markdown.
+- Gere de 3 a 8 termos de busca.
+- Os termos devem ser curtos e úteis.
 - Inclua variações com artista quando fizer sentido.
-- A resposta deve seguir este formato:
+- Não invente uma música específica sem indícios claros.
+- Corrija erros fonéticos prováveis.
+- Priorize músicas, artistas e combinações pesquisáveis.
+
+Formato obrigatório:
 {
   "terms": ["termo 1", "termo 2", "termo 3"]
 }
 
-Entrada do usuário:
-"${query}"
-`;
+Exemplos:
+Entrada: "bed gui bilie"
+Saída: {
+  "terms": ["bad guy billie eilish", "bad guy", "billie eilish bad guy", "billie eilish"]
+}
+
+Entrada: "blinding ligths"
+Saída: {
+  "terms": ["blinding lights", "the weeknd blinding lights", "blinding lights the weeknd"]
+}
+
+Entrada: "beatls yesterday"
+Saída: {
+  "terms": ["yesterday the beatles", "the beatles yesterday", "yesterday"]
+}
+`,
+    },
+    {
+      role: "user",
+      content: query,
+    },
+  ];
 
   const response = await fetch(OPENAI_API_URL, {
     method: "POST",
@@ -88,19 +137,30 @@ Entrada do usuário:
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-      input: prompt,
+      model,
+      messages,
       temperature: 0.2,
+      response_format: {
+        type: "json_object",
+      },
     }),
   });
 
   if (!response.ok) {
-    throw new Error("Falha ao chamar OpenAI");
+    const errorText = await response.text();
+    throw new Error(
+      `Falha ao chamar OpenAI: ${response.status} - ${errorText}`,
+    );
   }
 
   const data = await response.json();
-  const outputText = extractOpenAIText(data);
-  const parsed = JSON.parse(outputText);
+  const content = data.choices?.[0]?.message?.content;
+
+  if (!content) {
+    return [];
+  }
+
+  const parsed = JSON.parse(content);
 
   if (!Array.isArray(parsed.terms)) {
     return [];
@@ -109,32 +169,13 @@ Entrada do usuário:
   return parsed.terms.map((term) => String(term).trim()).filter(Boolean);
 }
 
-function extractOpenAIText(data) {
-  if (typeof data.output_text === "string") {
-    return data.output_text;
-  }
-
-  const output = data.output || [];
-
-  for (const item of output) {
-    const content = item.content || [];
-
-    for (const contentItem of content) {
-      if (contentItem.type === "output_text" && contentItem.text) {
-        return contentItem.text;
-      }
-    }
-  }
-
-  return "";
-}
-
 /* =========================
    Fallback sem IA
 ========================= */
 
 function createFallbackSearchTerms(query) {
   const normalizedQuery = normalizeText(query);
+
   const words = normalizedQuery.split(" ").filter((word) => word.length >= 2);
 
   const terms = new Set();
@@ -146,15 +187,19 @@ function createFallbackSearchTerms(query) {
     terms.add(words.join(" "));
   }
 
+  for (let i = 0; i < words.length - 1; i++) {
+    terms.add(`${words[i]} ${words[i + 1]}`);
+  }
+
+  if (words.length >= 3) {
+    terms.add(words.slice(0, 3).join(" "));
+  }
+
   words.forEach((word) => {
     if (word.length >= 3) {
       terms.add(word);
     }
   });
-
-  for (let i = 0; i < words.length - 1; i++) {
-    terms.add(`${words[i]} ${words[i + 1]}`);
-  }
 
   return Array.from(terms).slice(0, MAX_AI_TERMS);
 }
@@ -197,14 +242,14 @@ async function searchDeezer(term) {
 }
 
 /* =========================
-   Ranking
+   Ranking dos resultados
 ========================= */
 
 function rankResults(originalQuery, searchTerms, musics) {
   return musics
     .map((music) => ({
       id: music.id,
-      title: music.title,
+      title: music.title || "Título desconhecido",
       artist: {
         name: music.artist?.name || "Artista desconhecido",
       },
@@ -227,69 +272,101 @@ function calculateSimilarity(originalQuery, searchTerms, music) {
   const album = normalizeText(music.album?.title || "");
   const fullText = `${title} ${artist} ${album}`;
 
+  const queryWords = query.split(" ").filter(Boolean);
+  const musicWords = fullText.split(" ").filter(Boolean);
+
   let score = 0;
+
+  const wordMatches = queryWords.map((queryWord) => {
+    const bestSimilarity = musicWords.reduce((best, musicWord) => {
+      const similarity = getTextSimilarity(queryWord, musicWord);
+      return Math.max(best, similarity);
+    }, 0);
+
+    return bestSimilarity;
+  });
+
+  const averageWordMatch =
+    wordMatches.length > 0
+      ? wordMatches.reduce((sum, value) => sum + value, 0) / wordMatches.length
+      : 0;
+
+  const strongMatches = wordMatches.filter((value) => value >= 0.75).length;
+  const mediumMatches = wordMatches.filter((value) => value >= 0.6).length;
+
+  score += averageWordMatch * 70;
+  score += strongMatches * 18;
+  score += mediumMatches * 10;
+
+  if (title === query) {
+    score += 100;
+  }
 
   if (fullText.includes(query)) {
     score += 80;
   }
 
   if (title.includes(query)) {
-    score += 90;
+    score += 70;
   }
 
   if (artist.includes(query)) {
-    score += 50;
+    score += 45;
   }
 
   searchTerms.forEach((term) => {
     const normalizedTerm = normalizeText(term);
 
-    if (title.includes(normalizedTerm)) {
-      score += 65;
+    if (!normalizedTerm || normalizedTerm.length < 4) {
+      return;
     }
 
-    if (artist.includes(normalizedTerm)) {
-      score += 45;
+    const termWords = normalizedTerm.split(" ").filter(Boolean);
+
+    if (termWords.length >= 2 && title.includes(normalizedTerm)) {
+      score += 85;
     }
 
-    if (fullText.includes(normalizedTerm)) {
-      score += 40;
+    if (termWords.length >= 2 && fullText.includes(normalizedTerm)) {
+      score += 70;
+    }
+
+    if (termWords.length >= 2 && artist.includes(normalizedTerm)) {
+      score += 35;
     }
 
     const termSimilarityWithTitle = getTextSimilarity(normalizedTerm, title);
-    const termSimilarityWithArtist = getTextSimilarity(normalizedTerm, artist);
+    const termSimilarityWithFullText = getTextSimilarity(
+      normalizedTerm,
+      fullText,
+    );
 
-    if (termSimilarityWithTitle >= 0.75) {
-      score += 55;
+    if (termWords.length >= 2 && termSimilarityWithTitle >= 0.72) {
+      score += 60;
     }
 
-    if (termSimilarityWithArtist >= 0.75) {
-      score += 35;
-    }
-  });
-
-  const queryWords = query.split(" ").filter(Boolean);
-  const musicWords = fullText.split(" ").filter(Boolean);
-
-  queryWords.forEach((queryWord) => {
-    const bestScore = musicWords.reduce((best, musicWord) => {
-      const similarity = getTextSimilarity(queryWord, musicWord);
-      return Math.max(best, similarity);
-    }, 0);
-
-    if (bestScore >= 0.8) {
-      score += 25;
-    } else if (bestScore >= 0.65) {
-      score += 15;
+    if (termWords.length >= 2 && termSimilarityWithFullText >= 0.72) {
+      score += 45;
     }
   });
 
-  if (music.rank) {
-    score += Math.min(music.rank / 100000, 15);
+  const queryHasMultipleWords = queryWords.length >= 2;
+  const matchedFewWords = mediumMatches <= 1;
+
+  if (queryHasMultipleWords && matchedFewWords) {
+    score -= 35;
   }
 
-  return Math.min(Math.round(score), 99);
+  if (music.rank) {
+    score += Math.min(music.rank / 200000, 8);
+  }
+
+  return Math.max(Math.min(Math.round(score), 99), 0);
 }
+
+/* =========================
+   Similaridade
+========================= */
 
 function getTextSimilarity(textA, textB) {
   const a = normalizeText(textA);
