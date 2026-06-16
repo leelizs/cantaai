@@ -8,7 +8,7 @@
 
     <meta
       name="description"
-      content="Grave sua voz falando, cantando ou cantarolando para tentar descobrir uma música."
+      content="Fale o que você lembra ou cantarole a melodia para tentar descobrir uma música."
     />
 
     <link rel="stylesheet" href="./record.css" />
@@ -27,8 +27,8 @@
         </h1>
 
         <p class="record-hero__description">
-          Escolha se você quer falar o que lembra ou cantarolar a melodia. O
-          CantaAI usa caminhos diferentes para cada tipo de gravação.
+          Fale o que você lembra ou cantarole a melodia. O CantaAI usa caminhos
+          diferentes para cada tipo de busca.
         </p>
       </section>
 
@@ -74,6 +74,22 @@
           Fale algo como “bad michael jackson” ou “smooth criminal”.
         </p>
 
+        <div id="speechPanel" class="speech-panel">
+          <label for="speechTranscript">O que o navegador entendeu</label>
+
+          <textarea
+            id="speechTranscript"
+            class="speech-transcript"
+            rows="3"
+            placeholder="Ex: smooth criminal michael jackson"
+          ></textarea>
+
+          <small>
+            Você pode corrigir o texto antes de buscar. Isso ajuda muito quando
+            o navegador entende alguma palavra errada.
+          </small>
+        </div>
+
         <div class="recorder-visual" id="recorderVisual">
           <div class="recorder-pulse"></div>
           <span class="recorder-icon">🎤</span>
@@ -87,7 +103,7 @@
             class="button button--primary"
             type="button"
           >
-            Começar gravação
+            Começar a ouvir
           </button>
 
           <button
@@ -105,7 +121,7 @@
             type="button"
             disabled
           >
-            Regravar
+            Limpar
           </button>
         </div>
 
@@ -117,11 +133,11 @@
           type="button"
           disabled
         >
-          Analisar gravação
+          Buscar música
         </button>
 
         <p id="status" class="status" role="status">
-          Escolha um modo, clique em começar e permita o uso do microfone.
+          Escolha um modo e clique em começar.
         </p>
       </section>
 
@@ -141,22 +157,23 @@
           <article class="tip-card">
             <strong id="tipOneTitle">Fale de forma simples</strong>
             <p id="tipOneText">
-              Diga o nome da música, artista ou uma parte da letra que você
+              Diga o nome da música, artista ou um pedaço da letra que você
               lembra.
             </p>
           </article>
 
           <article class="tip-card">
-            <strong id="tipTwoTitle">Evite ruído</strong>
+            <strong id="tipTwoTitle">Corrija se precisar</strong>
             <p id="tipTwoText">
-              Grave perto do microfone e evite vento, TV ou conversa no fundo.
+              Se o navegador entender errado, edite o texto antes de buscar.
             </p>
           </article>
 
           <article class="tip-card">
-            <strong id="tipThreeTitle">Use poucos segundos</strong>
+            <strong id="tipThreeTitle">IA só se você pedir</strong>
             <p id="tipThreeText">
-              Para fala, uma gravação curta e clara costuma funcionar melhor.
+              Primeiro o CantaAI busca sem gastar IA. Depois você pode refinar
+              se precisar.
             </p>
           </article>
         </div>

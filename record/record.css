@@ -41,7 +41,8 @@ body {
 
 button,
 audio,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -227,6 +228,62 @@ a {
   text-align: center;
   line-height: 1.5;
 }
+
+/* =========================
+   Speech
+========================= */
+
+.speech-panel {
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--radius-md);
+
+  display: grid;
+  gap: 10px;
+
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.speech-panel[hidden] {
+  display: none;
+}
+
+.speech-panel label {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.speech-panel small {
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+
+.speech-transcript {
+  width: 100%;
+  min-height: 86px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  outline: none;
+  resize: vertical;
+
+  background: var(--color-input);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+.speech-transcript::placeholder {
+  color: rgba(207, 214, 255, 0.55);
+}
+
+.speech-transcript:focus {
+  border-color: rgba(124, 140, 255, 0.7);
+}
+
+/* =========================
+   Visual
+========================= */
 
 .recorder-visual {
   position: relative;
