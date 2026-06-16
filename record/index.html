@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="./record.css" />
     <script src="./record.js" defer></script>
   </head>
+
   <body>
     <main class="record-page">
       <a href="../home/" class="back-link">← Voltar</a>
@@ -83,6 +84,13 @@
         </p>
       </section>
 
+      <section
+        id="recordResults"
+        class="record-results"
+        aria-label="Resultados da gravação"
+        aria-live="polite"
+      ></section>
+
       <section class="record-tips" aria-labelledby="tips-title">
         <h2 id="tips-title" class="section-title">
           Dicas para funcionar melhor
@@ -101,7 +109,10 @@
 
           <article class="tip-card">
             <strong>Pode cantar errado</strong>
-            <p>O foco é capturar a melodia ou um trecho reconhecível.</p>
+            <p>
+              O foco é capturar a melodia. Se você falar o nome da música, o
+              CantaAI também tenta interpretar como busca por texto.
+            </p>
           </article>
         </div>
       </section>
