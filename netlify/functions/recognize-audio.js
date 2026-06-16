@@ -8,6 +8,11 @@ const MAX_AUDIO_SIZE_BYTES = 5 * 1024 * 1024;
 const GEMINI_API_BASE_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
 
+const RECOGNITION_MODES = {
+  SPEECH: "speech",
+  HUMMING: "humming",
+};
+
 const CONFIDENCE = {
   HIGH: "high",
   MEDIUM: "medium",
@@ -32,10 +37,9 @@ exports.handler = async function (event) {
   }
 
   try {
-    validateAcrCloudEnvironmentVariables();
-
     const body = JSON.parse(event.body || "{}");
 
+    const mode = normalizeRecognitionMode(body.mode);
     const audioBase64 = body.audioBase64;
     const mimeType = body.mimeType || "audio/webm";
 
@@ -60,24 +64,46 @@ exports.handler = async function (event) {
       });
     }
 
+    if (mode === RECOGNITION_MODES.SPEECH) {
+      validateGeminiEnvironmentVariables();
+
+      const speech = await extractSpeechQueryWithGemini(audioBase64, mimeType);
+
+      return createResponse(200, {
+        success: true,
+        mode,
+        confidence: speech.query ? "speech" : CONFIDENCE.NONE,
+        matches: [],
+        speech,
+        debug: {
+          provider: "gemini",
+          audioBytes: audioBuffer.length,
+        },
+      });
+    }
+
+    validateAcrCloudEnvironmentVariables();
+
     const acrResult = await recognizeWithAcrCloud(audioBuffer, mimeType);
     const matches = normalizeAcrCloudResult(acrResult);
     const confidence = getRecognitionConfidence(matches);
 
-    const speech = await tryExtractSpeechQuery({
-      audioBase64,
-      mimeType,
-      shouldTry: confidence !== CONFIDENCE.HIGH,
-    });
-
     return createResponse(200, {
       success: true,
+      mode,
       confidence,
       matches,
-      speech,
+      speech: {
+        aiUsed: false,
+        query: "",
+        confidence: 0,
+        error: null,
+      },
       debug: {
+        provider: "acrcloud",
         acrStatus: acrResult.status || null,
         bestScore: matches[0]?.score || 0,
+        audioBytes: audioBuffer.length,
       },
     });
   } catch (error) {
@@ -148,41 +174,8 @@ async function recognizeWithAcrCloud(audioBuffer, mimeType) {
 }
 
 /* =========================
-   Gemini fallback para fala
+   Gemini para fala
 ========================= */
-
-async function tryExtractSpeechQuery({ audioBase64, mimeType, shouldTry }) {
-  if (!shouldTry) {
-    return {
-      aiUsed: false,
-      query: "",
-      confidence: 0,
-      error: null,
-    };
-  }
-
-  if (!process.env.GEMINI_API_KEY) {
-    return {
-      aiUsed: false,
-      query: "",
-      confidence: 0,
-      error: "GEMINI_API_KEY não configurada.",
-    };
-  }
-
-  try {
-    return await extractSpeechQueryWithGemini(audioBase64, mimeType);
-  } catch (error) {
-    console.error("Erro no fallback Gemini:", error);
-
-    return {
-      aiUsed: false,
-      query: "",
-      confidence: 0,
-      error: error.message || "Erro ao interpretar fala com Gemini.",
-    };
-  }
-}
 
 async function extractSpeechQueryWithGemini(audioBase64, mimeType) {
   const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
@@ -195,23 +188,32 @@ Analise o áudio enviado.
 
 Objetivo:
 - Se a pessoa falou algo parecido com nome de música, artista ou trecho de letra, transforme em uma busca textual curta.
+- Corrija erros prováveis de pronúncia.
 - Se a pessoa apenas cantarolou sem palavras reconhecíveis, retorne query vazia.
 - Se a fala estiver confusa demais, retorne query vazia.
 - Não invente música sem indícios claros.
 
 Exemplos:
-Áudio fala: "bad michael jackson"
+
+Fala: "bad michael jackson"
 Resposta:
 {
   "query": "bad michael jackson",
   "confidence": 90
 }
 
-Áudio fala: "bad gai bilie"
+Fala: "bad gai bilie"
 Resposta:
 {
   "query": "bad guy billie eilish",
   "confidence": 85
+}
+
+Fala: "quéri on uei uarde son"
+Resposta:
+{
+  "query": "carry on wayward son",
+  "confidence": 80
 }
 
 Áudio só cantarola sem palavras:
@@ -314,7 +316,7 @@ function stripJsonMarkdown(text) {
 }
 
 /* =========================
-   Normalização do resultado
+   Normalização ACRCloud
 ========================= */
 
 function normalizeAcrCloudResult(acrResult) {
@@ -325,12 +327,12 @@ function normalizeAcrCloudResult(acrResult) {
     ? metadata.humming
     : [];
 
-  const normalizedMusic = musicResults.map((item) =>
-    normalizeTrack(item, "music"),
-  );
-
   const normalizedHumming = hummingResults.map((item) =>
     normalizeTrack(item, "humming"),
+  );
+
+  const normalizedMusic = musicResults.map((item) =>
+    normalizeTrack(item, "music"),
   );
 
   return [...normalizedHumming, ...normalizedMusic]
@@ -403,6 +405,14 @@ function getRecognitionConfidence(matches) {
    Helpers
 ========================= */
 
+function normalizeRecognitionMode(mode) {
+  if (mode === RECOGNITION_MODES.HUMMING) {
+    return RECOGNITION_MODES.HUMMING;
+  }
+
+  return RECOGNITION_MODES.SPEECH;
+}
+
 function validateAcrCloudEnvironmentVariables() {
   const requiredVariables = [
     "ACRCLOUD_HOST",
@@ -418,6 +428,12 @@ function validateAcrCloudEnvironmentVariables() {
     throw new Error(
       `Variáveis ausentes no Netlify: ${missingVariables.join(", ")}`,
     );
+  }
+}
+
+function validateGeminiEnvironmentVariables() {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("Variável ausente no Netlify: GEMINI_API_KEY");
   }
 }
 

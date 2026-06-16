@@ -11,6 +11,7 @@
 
   --color-card: rgba(255, 255, 255, 0.08);
   --color-card-hover: rgba(255, 255, 255, 0.12);
+  --color-input: rgba(255, 255, 255, 0.1);
 
   --radius-sm: 14px;
   --radius-md: 18px;
@@ -39,7 +40,8 @@ body {
 }
 
 button,
-audio {
+audio,
+input {
   font: inherit;
 }
 
@@ -118,7 +120,7 @@ a {
 ========================= */
 
 .recorder-card {
-  max-width: 620px;
+  max-width: 680px;
   margin: 0 auto 42px;
   padding: 28px;
   border-radius: var(--radius-lg);
@@ -130,6 +132,100 @@ a {
 
   background: var(--color-card);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* =========================
+   Mode selector
+========================= */
+
+.mode-selector {
+  width: 100%;
+  border: 0;
+
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.mode-selector legend {
+  width: 100%;
+  margin-bottom: 12px;
+
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.mode-card {
+  position: relative;
+
+  min-height: 98px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+
+  transition:
+    border-color var(--transition-default),
+    background var(--transition-default),
+    transform var(--transition-default);
+}
+
+.mode-card:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mode-card.is-selected {
+  border-color: rgba(124, 140, 255, 0.75);
+  background: linear-gradient(
+    135deg,
+    rgba(93, 108, 252, 0.28),
+    rgba(255, 255, 255, 0.08)
+  );
+}
+
+.mode-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mode-card__icon {
+  font-size: 30px;
+  flex-shrink: 0;
+}
+
+.mode-card__content {
+  display: grid;
+  gap: 5px;
+}
+
+.mode-card__content strong {
+  line-height: 1.2;
+}
+
+.mode-card__content small {
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+.mode-hint {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+
+  background: rgba(124, 140, 255, 0.12);
+  color: #dfe4ff;
+  text-align: center;
+  line-height: 1.5;
 }
 
 .recorder-visual {
@@ -338,6 +434,11 @@ a {
   font-weight: 700;
 }
 
+.result-badge--warning {
+  background: rgba(255, 209, 102, 0.18);
+  color: #ffe4a3;
+}
+
 .result-meta {
   color: #8fa0ff;
   font-size: 14px;
@@ -517,6 +618,10 @@ a {
 
   .recorder-card {
     padding: 24px 18px;
+  }
+
+  .mode-selector {
+    grid-template-columns: 1fr;
   }
 
   .record-actions {

@@ -4,11 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>CantaAI - Cantar ou cantarolar</title>
+    <title>CantaAI - Buscar por voz</title>
 
     <meta
       name="description"
-      content="Grave sua voz cantando ou cantarolando para tentar descobrir uma música."
+      content="Grave sua voz falando, cantando ou cantarolando para tentar descobrir uma música."
     />
 
     <link rel="stylesheet" href="./record.css" />
@@ -23,16 +23,57 @@
         <p class="record-hero__tag">Busca por áudio</p>
 
         <h1 id="record-title" class="record-hero__title">
-          Cante ou cantarole a música.
+          Encontre músicas pela voz.
         </h1>
 
         <p class="record-hero__description">
-          Grave alguns segundos da melodia, trecho cantado ou cantarolado.
-          Depois o CantaAI vai tentar descobrir qual música parece com o áudio.
+          Escolha se você quer falar o que lembra ou cantarolar a melodia. O
+          CantaAI usa caminhos diferentes para cada tipo de gravação.
         </p>
       </section>
 
       <section class="recorder-card" aria-label="Gravador de áudio">
+        <fieldset class="mode-selector" aria-label="Escolha o tipo de busca">
+          <legend>Como você quer buscar?</legend>
+
+          <label class="mode-card is-selected" for="modeSpeech">
+            <input
+              id="modeSpeech"
+              type="radio"
+              name="recordMode"
+              value="speech"
+              checked
+            />
+
+            <span class="mode-card__icon">🗣️</span>
+
+            <span class="mode-card__content">
+              <strong>Falar o que lembra</strong>
+              <small>Nome, artista ou pedaço da letra.</small>
+            </span>
+          </label>
+
+          <label class="mode-card" for="modeHumming">
+            <input
+              id="modeHumming"
+              type="radio"
+              name="recordMode"
+              value="humming"
+            />
+
+            <span class="mode-card__icon">🎵</span>
+
+            <span class="mode-card__content">
+              <strong>Cantarolar melodia</strong>
+              <small>Use “hmmm”, “nanana” ou assobio.</small>
+            </span>
+          </label>
+        </fieldset>
+
+        <p id="modeHint" class="mode-hint">
+          Fale algo como “bad michael jackson” ou “smooth criminal”.
+        </p>
+
         <div class="recorder-visual" id="recorderVisual">
           <div class="recorder-pulse"></div>
           <span class="recorder-icon">🎤</span>
@@ -80,7 +121,7 @@
         </button>
 
         <p id="status" class="status" role="status">
-          Clique em começar e permita o uso do microfone.
+          Escolha um modo, clique em começar e permita o uso do microfone.
         </p>
       </section>
 
@@ -98,20 +139,24 @@
 
         <div class="tips-grid">
           <article class="tip-card">
-            <strong>Grave de 8 a 15 segundos</strong>
-            <p>Um trecho muito curto pode dificultar o reconhecimento.</p>
+            <strong id="tipOneTitle">Fale de forma simples</strong>
+            <p id="tipOneText">
+              Diga o nome da música, artista ou uma parte da letra que você
+              lembra.
+            </p>
           </article>
 
           <article class="tip-card">
-            <strong>Evite muito barulho</strong>
-            <p>Quanto mais limpa a gravação, melhor a chance de acertar.</p>
+            <strong id="tipTwoTitle">Evite ruído</strong>
+            <p id="tipTwoText">
+              Grave perto do microfone e evite vento, TV ou conversa no fundo.
+            </p>
           </article>
 
           <article class="tip-card">
-            <strong>Pode cantar errado</strong>
-            <p>
-              O foco é capturar a melodia. Se você falar o nome da música, o
-              CantaAI também tenta interpretar como busca por texto.
+            <strong id="tipThreeTitle">Use poucos segundos</strong>
+            <p id="tipThreeText">
+              Para fala, uma gravação curta e clara costuma funcionar melhor.
             </p>
           </article>
         </div>
